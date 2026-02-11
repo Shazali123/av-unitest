@@ -1,0 +1,48 @@
+============================================================
+AV BENCHMARK TEST RESULTS
+============================================================
+Date: 2026-02-03 19:07:01
+Detected Antivirus: Windows Defender
+
+------------------------------------------------------------
+MODULE RESULTS
+------------------------------------------------------------
+
+Module 1 (EICAR Test):
+  Execution Time: 5.13s
+  Detection Time: N/A
+  CPU Usage: Avg 7.1% | Peak 37.4%
+  RAM Usage: Avg 17532.0 MB | Peak 17544.0 MB
+  Disk I/O: Read 1.04 MB | Write 3.34 MB
+  Status: Completed
+
+Module 2 (GoPhish Simulation):
+  Execution Time: 1.61s
+  Detection Time: N/A
+  CPU Usage: Avg 4.1% | Peak 14.0%
+  RAM Usage: Avg 17531.0 MB | Peak 17536.0 MB
+  Disk I/O: Read 0.02 MB | Write 0.36 MB
+  Status: Completed
+
+Module 3 (Atomic Red Team):
+  Execution Time: 2.61s
+  Detection Time: N/A
+  CPU Usage: Avg 4.1% | Peak 14.3%
+  RAM Usage: Avg 17527.0 MB | Peak 17535.0 MB
+  Disk I/O: Read 0.0 MB | Write 0.41 MB
+  Status: Completed
+
+  Test Results:
+    - T1059.001 (PowerShell): Not Detected
+    - T1003.001 (LSASS Memory): Detected
+    - T1055.001 (Process Injection): Detected
+    - T1082 (System Info Discovery): Not Detected
+    - T1083 (File Discovery): Detected
+
+------------------------------------------------------------
+TOTAL EXECUTION TIME: 9.35s
+AVERAGE CPU USAGE: 5.1%
+PEAK CPU USAGE: 37.4%
+AVERAGE RAM USAGE: 17530.0 MB
+PEAK RAM USAGE: 17544.0 MB
+============================================================

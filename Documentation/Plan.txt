@@ -1,0 +1,58 @@
+Implementation Plan - Antivirus Benchmark and Comparison System (Client-Server)
+Goal
+Develop a sophisticated, real-time antivirus benchmarking system. The system uses a Client-Server Architecture:
+
+HomeLab Server (HQ): Central hub that stores data, runs the Comparison Dashboard (Real-time), and hosts the GoPhish server.
+Benchmark Agent (Client): Runs on test VMs. It presents a landing interface with two options ("View Live Comparisons" vs "Run Benchmark"). It captures metrics, runs simulations, and streams results to the HQ.
+Architecture
+1. HomeLab Server (The "HQ")
+Role: Central Command & Dashboard.
+Components:
+Data Ingestion API: REST API (FastAPI) to receive logs from Agents.
+Database: Stores test results (SQLite/PostgreSQL).
+Real-time Dashboard: Web-based (React/Simple HTML+JS) interface displaying live results.
+GoPhish Server: Hosted here to send phishing campaigns.
+2. Benchmark Agent (The "Victim/Tester")
+Role: Client application on Target VMs.
+User Flow:
+Launcher UI: User presented with two buttons:
+[View Antivirus Comparison]: Opens the web-based Dashboard (hosted on HQ) in a browser/frame.
+[Benchmark Antivirus]: Displays a WARNING (Usage Consent). Upon acceptance, starts the testing suite.
+Modules:
+EICAR Module: Drops EICAR test file and monitors AV deletion/quarantine.
+Phishing Automation Module:
+Logic: Automates opening an email client to identify the GoPhish email and click the link.
+Atomic Red Team (ART) Module: Executes 10 specific AV-focused tests:
+T1059.001 (PowerShell): Malicious PowerShell execution.
+T1562.001 (Impair Defenses): Attempt to disable security tools.
+T1003.001 (Credential Dumping): LSASS memory dumping attempt.
+T1548.002 (Bypass UAC): UAC bypass techniques.
+T1053.005 (Scheduled Task): Persistence via scheduled tasks.
+T1112 (Modify Registry): Malicious registry run keys management.
+T1218.011 (System Binary Proxy): Misusing rundll32 to execute code.
+T1027 (Obfuscated Files): Decoding encoded commands/payloads.
+T1087 (Account Discovery): Enumerating local accounts.
+T1041 (Exfiltration): Attempting to send data over C2 channel.
+Resources Monitor: Streams CPU/RAM usage.
+Technology Stack
+Server: Python (FastAPI), DB (SQLite).
+Dashboard: Web Interface (HTML/JS/Chart.js).
+Agent: Python 3.9+ (CustomTkinter for UI), PowerShell.
+Automation: Selenium/PyAutoGUI for Phishing interaction.
+Proposed Changes / File Structure
+/server (HomeLab HQ)
+app.py: FastAPI backend.
+static/index.html: Real-time Dashboard.
+/agent (Benchmark Tool)
+main.py: Launcher UI (CustomTkinter).
+modules/:
+art_test.py: Integration for the 10 T-codes.
+phishing.py: Automation logic.
+eicar.py: EICAR drop.
+Verification Plan
+Automated Tests
+Verify ART wrapper can invoke Invoke-AtomicTest.
+Verify Agent Launcher correctly routes to Dashboard URL or Benchmark logic.
+Manual Verification
+Agent Flow: Start Agent -> Click "Benchmark" -> Accept Warning -> Watch Tests.
+Detection: Verify AV creates alerts for the T1003 (LSASS) and T1059 (PowerShell) tests.
