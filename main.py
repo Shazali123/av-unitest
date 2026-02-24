@@ -5,9 +5,43 @@ Phase 1: Core benchmark with modular testing
 
 import customtkinter as ctk
 import threading
+import sys
 import av_detector
 from module_manager import ModuleManager
 from results_handler import ResultsHandler
+
+
+# ---------------------------------------------------------------------------
+# Live console output: redirects print() to the CTkTextbox during benchmark
+# ---------------------------------------------------------------------------
+
+class _TextRedirector:
+    """Wraps a CTkTextbox so print() writes to it in real-time."""
+
+    def __init__(self, widget, app):
+        self._widget = widget
+        self._app    = app          # reference for .after() scheduling
+        self._orig   = sys.stdout   # save original stdout
+
+    def write(self, text: str):
+        if text:                    # avoid blank flushes
+            self._app.after(0, self._append, text)
+
+    def _append(self, text: str):
+        try:
+            self._widget.insert("end", text)
+            self._widget.see("end")
+        except Exception:
+            pass
+
+    def flush(self):
+        pass
+
+    def install(self):
+        sys.stdout = self
+
+    def uninstall(self):
+        sys.stdout = self._orig
 
 
 class BenchmarkApp(ctk.CTk):
@@ -137,63 +171,115 @@ class BenchmarkApp(ctk.CTk):
         # Run modules in background thread
         threading.Thread(target=self.run_modules, daemon=True).start()
         
+    # ------------------------------------------------------------------
+    # Module descriptions shown in status bar during run
+    # ------------------------------------------------------------------
+    _MODULE_DESCRIPTIONS = {
+        "EICAR Test":          "Writing EICAR test file and monitoring for AV quarantine...",
+        "GoPhish Simulation":  "Connecting to GoPhish server and running phishing campaign...",
+        "Atomic Red Team":     "Executing Atomic Red Team attack simulations...",
+    }
+
     def show_loading_screen(self):
         """Display loading screen"""
         self.clear_screen()
         self.current_screen = "loading"
-        
+
         # Title
         title = ctk.CTkLabel(
             self.main_container,
             text="Running Benchmark...",
             font=ctk.CTkFont(size=28, weight="bold")
         )
-        title.pack(pady=(60, 30))
-        
+        title.pack(pady=(30, 10))
+
         # Progress bar
         self.progress_bar = ctk.CTkProgressBar(
             self.main_container,
-            width=600,
-            height=30
+            width=620,
+            height=24
         )
-        self.progress_bar.pack(pady=20)
+        self.progress_bar.pack(pady=(10, 4))
         self.progress_bar.set(0)
-        
-        # Status label
+
+        # Primary status  (e.g. "Module 1/3  —  EICAR Test")
         self.status_label = ctk.CTkLabel(
             self.main_container,
             text="Initializing...",
-            font=ctk.CTkFont(size=16)
+            font=ctk.CTkFont(size=16, weight="bold")
         )
-        self.status_label.pack(pady=20)
-        
+        self.status_label.pack(pady=(4, 0))
+
+        # Secondary status (e.g. detailed description of what the module does)
+        self.status_detail = ctk.CTkLabel(
+            self.main_container,
+            text="",
+            font=ctk.CTkFont(size=13),
+            text_color="gray"
+        )
+        self.status_detail.pack(pady=(2, 8))
+
         # Console output
         console_frame = ctk.CTkFrame(self.main_container)
-        console_frame.pack(pady=20, padx=40, fill="both", expand=True)
-        
+        console_frame.pack(pady=8, padx=40, fill="both", expand=True)
+
+        console_title = ctk.CTkLabel(
+            console_frame,
+            text="Live Output",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            anchor="w"
+        )
+        console_title.pack(pady=(6, 0), padx=10, anchor="w")
+
         self.console_text = ctk.CTkTextbox(
             console_frame,
-            font=ctk.CTkFont(family="Consolas", size=12),
+            font=ctk.CTkFont(family="Consolas", size=11),
             width=800,
-            height=300
+            height=320
         )
-        self.console_text.pack(pady=10, padx=10, fill="both", expand=True)
-        
+        self.console_text.pack(pady=(4, 10), padx=10, fill="both", expand=True)
+
+        # Install stdout redirector so all module print() calls appear live
+        self._stdout_redirector = _TextRedirector(self.console_text, self)
+        self._stdout_redirector.install()
+
+    def _log_console(self, text: str):
+        """Thread-safe write to the console textbox (no newline added)."""
+        self.after(0, self._console_append, text)
+
+    def _console_append(self, text: str):
+        try:
+            self.console_text.insert("end", text)
+            self.console_text.see("end")
+        except Exception:
+            pass
+
     def update_progress(self, current, total, module_name):
-        """Update progress bar and status"""
-        progress = current / total
-        self.progress_bar.set(progress)
-        self.status_label.configure(text=f"Running Module {current}/{total}: {module_name}")
-        self.console_text.insert("end", f"\n[{current}/{total}] Starting: {module_name}...")
-        self.console_text.see("end")
-        
+        """Update progress bar and status labels (called from background thread)."""
+        def _update():
+            progress = current / total
+            self.progress_bar.set(progress)
+            self.status_label.configure(
+                text=f"Module {current} of {total}  \u2014  {module_name}"
+            )
+            desc = self._MODULE_DESCRIPTIONS.get(module_name,
+                                                  f"Running {module_name}...")
+            self.status_detail.configure(text=desc)
+        self.after(0, _update)
+        # Also write a separator line to the console
+        sep = f"\n{'=' * 55}\n[{current}/{total}] {module_name}\n{'=' * 55}\n"
+        self._log_console(sep)
+
     def run_modules(self):
         """Run all modules (background thread)"""
-        # Run modules with progress callback
         self.module_results = self.module_manager.run_modules(
             progress_callback=self.update_progress
         )
-        
+
+        # Restore stdout before showing results
+        if hasattr(self, '_stdout_redirector'):
+            self._stdout_redirector.uninstall()
+
         # Show results screen
         self.after(500, self.show_results_screen)
         

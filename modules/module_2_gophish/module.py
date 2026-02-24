@@ -334,18 +334,26 @@ class GoPhishModule(BaseModule):
             return False
 
         # ---- Create campaign ----
-        # Launch 5 seconds from now (UTC)
         launch_dt   = datetime.datetime.utcnow() + datetime.timedelta(seconds=5)
         launch_time = launch_dt.strftime('%Y-%m-%dT%H:%M:%S+00:00')
 
+        # Build phish server URL from config host IP + phish_port (default 8081)
+        try:
+            host_ip   = cfg['host'].split('://')[-1].split(':')[0]
+            phish_url = f"http://{host_ip}:{cfg.get('phish_port', 8081)}"
+        except Exception:
+            phish_url = cfg['host']
+        print(f"[GoPhish] Phish URL: {phish_url}")
+
+        # GoPhish API uses 'page' (NOT 'landing_page') for the landing page ref
         campaign_payload = {
-            'name':         cfg['campaign_name'],
-            'template':     {'name': tpl['name']},
-            'landing_page': {'name': page['name']},
-            'smtp':         {'name': smtp['name']},
-            'launch_date':  launch_time,
-            'url':          f"http://{cfg['host'].split('//')[1].split(':')[0]}:8081",
-            'groups':       [{'name': group_name}],
+            'name':        cfg['campaign_name'],
+            'template':    {'name': tpl['name']},
+            'page':        {'name': page['name']},
+            'smtp':        {'name': smtp['name']},
+            'launch_date': launch_time,
+            'url':         phish_url,
+            'groups':      [{'name': group_name}],
         }
 
         print("[GoPhish] Creating campaign...")
