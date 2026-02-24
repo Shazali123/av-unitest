@@ -59,40 +59,45 @@ class ResultsHandler:
     # ------------------------------------------------------------------
 
     def _format_gophish(self, result: dict) -> List[str]:
-        lines = []
-        gp = result.get('gophish_results', {})
+        lines   = []
+        gp      = result.get('gophish_results', {})
         offline = result.get('offline_demo', False)
+        mode    = gp.get('mode', 'Demo' if offline else 'Live')
+        detected = result.get('detected', False)
 
-        if offline:
+        if offline or mode == 'Demo':
             lines.append("  [OFFLINE DEMO MODE - GoPhish server not configured]")
+            lines.append(self._verdict_line(detected))
+            return lines
 
-        emails_sent     = gp.get('emails_sent', 'N/A')
-        emails_opened   = gp.get('emails_opened', 'N/A')
-        links_clicked   = gp.get('links_clicked', 'N/A')
-        creds_submitted = gp.get('credentials_submitted', 'N/A')
-        emails_flagged  = gp.get('emails_flagged_spam', 'N/A')
-        campaign_id     = gp.get('campaign_id', 'N/A')
-        campaign_status = gp.get('campaign_status', 'N/A')
-        detected        = result.get('detected', False)
-
+        # --- Live simulation results ---
         lines.append(self._verdict_line(detected))
-        lines.append(f"  Campaign ID     : {campaign_id}")
-        lines.append(f"  Campaign Status : {campaign_status}")
-        lines.append(f"  Emails Sent     : {emails_sent}")
-        lines.append(f"  Emails Opened   : {emails_opened}")
-        lines.append(f"  Links Clicked   : {links_clicked}")
-        lines.append(f"  Creds Submitted : {creds_submitted}")
-        lines.append(f"  Flagged as Spam : {emails_flagged}")
 
-        if isinstance(emails_sent, int) and emails_sent > 0:
-            if isinstance(emails_opened, int):
-                open_rate = round(emails_opened / emails_sent * 100, 1)
-                lines.append(f"  Open Rate       : {open_rate}%")
-            if isinstance(links_clicked, int):
-                click_rate = round(links_clicked / emails_sent * 100, 1)
-                lines.append(f"  Click Rate      : {click_rate}%")
+        phish_url   = gp.get('phish_url', 'N/A')
+        accessible  = gp.get('phish_url_accessible', False)
+        blocked     = gp.get('phish_page_blocked', True)
+        block_reason = gp.get('block_reason', '')
+        cred_ok     = gp.get('cred_submit_success', False)
+        clicks      = gp.get('clicks_recorded', 'N/A')
+        submits     = gp.get('submitted_recorded', 'N/A')
+        camp_id     = gp.get('campaign_id', 'N/A')
+        camp_status = gp.get('campaign_status', 'N/A')
+        verdict_rsn = gp.get('verdict_reason', '')
+
+        lines.append(f"  Campaign ID       : {camp_id}")
+        lines.append(f"  Campaign Status   : {camp_status}")
+        lines.append(f"  Phishing URL      : {phish_url}")
+        lines.append(f"  URL Accessible    : {'YES - page loaded' if accessible else 'NO - blocked/unreachable'}")
+        if blocked and block_reason:
+            lines.append(f"  Block Reason      : {block_reason}")
+        lines.append(f"  Cred Submission   : {'Succeeded (data POSTed)' if cred_ok else 'Not submitted / blocked'}")
+        lines.append(f"  Clicks Recorded   : {clicks}")
+        lines.append(f"  Submits Recorded  : {submits}")
+        if verdict_rsn:
+            lines.append(f"  Reason            : {verdict_rsn}")
 
         return lines
+
 
     # ------------------------------------------------------------------
     # Main compile
