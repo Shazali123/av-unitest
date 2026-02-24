@@ -196,7 +196,11 @@ class GoPhishModule(BaseModule):
     # ------------------------------------------------------------------
 
     def _load_config(self) -> dict:
-        config_path = os.path.join(os.path.dirname(__file__), 'gophish_config.json')
+        # Use abspath so this works when loaded dynamically via importlib
+        # (relative __file__ would break if cwd != tool root)
+        config_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), 'gophish_config.json'
+        )
         defaults = {
             "host":                  "http://127.0.0.1:3333",
             "api_key":               "",
@@ -215,8 +219,15 @@ class GoPhishModule(BaseModule):
                 with open(config_path, 'r') as f:
                     loaded = json.load(f)
                 defaults.update(loaded)
+                print(f"[GoPhish] Config loaded: {config_path}")
+                print(f"[GoPhish] Host: {defaults['host']}  "
+                      f"| offline_demo: {defaults['offline_demo_mode']}  "
+                      f"| api_key set: {bool(defaults['api_key'].strip())}")
             except Exception as e:
-                print(f"[GoPhish] Could not load config: {e}")
+                print(f"[GoPhish] Could not load config ({config_path}): {e}")
+        else:
+            print(f"[GoPhish] WARNING: config file NOT found at: {config_path}")
+            print("[GoPhish] Falling back to defaults (demo mode likely)")
         return defaults
 
     def get_info(self) -> dict:

@@ -75,7 +75,10 @@ class EICARModule(BaseModule):
             monitor.start()
 
             # --- Prepare temp dir ---
-            temp_dir = os.path.join(os.path.dirname(__file__), 'temp')
+            # Use abspath so path resolves correctly when loaded via importlib
+            temp_dir = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)), 'temp'
+            )
             os.makedirs(temp_dir, exist_ok=True)
             self.test_file_path = os.path.join(temp_dir, 'eicar_test.txt')
 
