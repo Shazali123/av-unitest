@@ -345,23 +345,38 @@ class GoPhishModule(BaseModule):
             phish_url = cfg['host']
         print(f"[GoPhish] Phish URL: {phish_url}")
 
-        # GoPhish API uses 'page' (NOT 'landing_page') for the landing page ref
+        # GoPhish campaign creation API requires full resource objects (id + name),
+        # NOT just {'name': '...'} — without the id, GoPhish returns HTTP 400.
+        # We pass the full dicts returned by the API (which have id, name, etc.)
+        #
+        # Campaign name gets a timestamp suffix to avoid name conflicts from
+        # previous benchmark runs that weren't fully cleaned up.
+        campaign_name = f"{cfg['campaign_name']}_{int(time.time())}"
         campaign_payload = {
-            'name':        cfg['campaign_name'],
-            'template':    {'name': tpl['name']},
-            'page':        {'name': page['name']},
-            'smtp':        {'name': smtp['name']},
+            'name':        campaign_name,
+            'template':    {'name': tpl['name'], 'id': tpl.get('id', 0)},
+            'page':        {'name': page['name'], 'id': page.get('id', 0)},
+            'smtp':        {'name': smtp['name'], 'id': smtp.get('id', 0)},
             'launch_date': launch_time,
             'url':         phish_url,
             'groups':      [{'name': group_name}],
         }
 
+        print(f"[GoPhish] Campaign payload:")
+        print(f"  name     : {campaign_payload['name']}")
+        print(f"  template : {campaign_payload['template']}")
+        print(f"  page     : {campaign_payload['page']}")
+        print(f"  smtp     : {campaign_payload['smtp']}")
+        print(f"  url      : {campaign_payload['url']}")
+        print(f"  groups   : {campaign_payload['groups']}")
+
         print("[GoPhish] Creating campaign...")
         campaign_data = client.create_campaign(campaign_payload)
         campaign_id   = campaign_data.get('id')
 
-        if not campaign_id:
-            print(f"[GoPhish] create_campaign returned: {campaign_data}")
+        # GoPhish returns -1 as id on internal errors even with HTTP 200
+        if not campaign_id or campaign_id < 0:
+            print(f"[GoPhish] create_campaign failed. Response: {campaign_data}")
             client.delete_group(group_id)
             return False
 
