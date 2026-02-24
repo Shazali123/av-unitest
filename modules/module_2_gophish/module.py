@@ -10,6 +10,9 @@ import os
 import sys
 import json
 import time
+import ssl
+import urllib.request
+import urllib.error
 import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -17,148 +20,148 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from base_module import BaseModule
 from system_monitor import SystemMonitor
 
-# Optional import - only needed for live mode
-try:
-    import urllib.request
-    import urllib.error
-    _HAS_URLLIB = True
-except ImportError:
-    _HAS_URLLIB = False
-
 
 # ---------------------------------------------------------------------------
-# Tiny GoPhish REST client (no third-party dependencies required)
+# Tiny GoPhish REST client
 # ---------------------------------------------------------------------------
 
 class GoPhishClient:
-    """Minimal GoPhish REST API client using only stdlib urllib"""
+    """Minimal GoPhish REST API client (stdlib only)"""
 
-    def __init__(self, host: str, api_key: str):
-        self.host = host.rstrip('/')
+    def __init__(self, host: str, api_key: str, timeout: int = 15):
+        self.host    = host.rstrip('/')
         self.api_key = api_key
-        self.headers = {
-            'Content-Type': 'application/json',
-        }
+        self.timeout = timeout
+        self._ctx    = self._make_ssl_ctx()
+
+    @staticmethod
+    def _make_ssl_ctx():
+        """SSL context that accepts self-signed certs (internal VMs)"""
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode    = ssl.CERT_NONE
+        return ctx
 
     def _request(self, method: str, path: str, data: dict = None):
         """
-        Make an API request.
-        Returns (status_code, response_dict).
-        Raises urllib.error.URLError on network failure.
+        Make API request, return (status_code, parsed_body).
+        Raises on network errors; returns (error_code, {}) on HTTP errors.
         """
-        import urllib.request
-        import urllib.error
-        import ssl
-
-        url = f"{self.host}/api{path}?api_key={self.api_key}"
-
+        url  = f"{self.host}/api{path}?api_key={self.api_key}"
         body = json.dumps(data).encode('utf-8') if data else None
-        req = urllib.request.Request(url, data=body, method=method)
+        req  = urllib.request.Request(url, data=body, method=method)
         req.add_header('Content-Type', 'application/json')
 
-        # Allow self-signed certs on internal VMs
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-
-        with urllib.request.urlopen(req, timeout=10, context=ctx) as resp:
-            raw = resp.read().decode('utf-8')
-            return resp.status, json.loads(raw) if raw else {}
-
-    # --- Campaigns ---
-
-    def get_campaigns(self):
-        _, data = self._request('GET', '/campaigns/')
-        return data  # list
-
-    def create_campaign(self, payload: dict):
-        _, data = self._request('POST', '/campaigns/', data=payload)
-        return data  # campaign dict with 'id'
-
-    def get_campaign_results(self, campaign_id: int):
-        _, data = self._request('GET', f'/campaigns/{campaign_id}/results')
-        return data
-
-    def complete_campaign(self, campaign_id: int):
         try:
-            self._request('GET', f'/campaigns/{campaign_id}/complete')
-        except Exception:
-            pass  # Best-effort cleanup
+            with urllib.request.urlopen(req, timeout=self.timeout,
+                                        context=self._ctx) as resp:
+                raw = resp.read().decode('utf-8')
+                return resp.status, (json.loads(raw) if raw.strip() else {})
 
-    # --- SMTP Profiles ---
+        except urllib.error.HTTPError as e:
+            err_body = e.read().decode('utf-8', errors='replace')
+            print(f"  [GoPhish API] HTTP {e.code} on {method} {path}: {err_body[:300]}")
+            return e.code, {}
 
-    def get_smtp_profiles(self):
-        _, data = self._request('GET', '/smtp/')
-        return data
+    def _get_list(self, path: str) -> list:
+        """
+        GET a resource list endpoint.
+        Handles both plain-list responses and wrapped {"data": [...]} responses.
+        """
+        code, data = self._request('GET', path)
+        if code != 200:
+            return []
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict):
+            # Newer GoPhish builds wrap in {"data": [...]}
+            for key in ('data', 'results', 'items'):
+                if isinstance(data.get(key), list):
+                    return data[key]
+        return []
 
-    # --- Templates ---
+    # ---- Public methods ----
 
-    def get_templates(self):
-        _, data = self._request('GET', '/templates/')
-        return data
+    def get_smtp_profiles(self) -> list:
+        return self._get_list('/smtp/')
 
-    # --- Landing Pages ---
+    def get_templates(self) -> list:
+        return self._get_list('/templates/')
 
-    def get_pages(self):
-        _, data = self._request('GET', '/pages/')
-        return data
+    def get_pages(self) -> list:
+        return self._get_list('/pages/')
 
-    # --- User Groups ---
+    def create_group(self, name: str, targets: list) -> dict:
+        code, data = self._request('POST', '/groups/', data={
+            'name':    name,
+            'targets': targets,
+        })
+        if code not in (200, 201):
+            print(f"  [GoPhish API] create_group failed (HTTP {code})")
+            return {}
+        return data if isinstance(data, dict) else {}
 
-    def get_groups(self):
-        _, data = self._request('GET', '/groups/')
-        return data
-
-    def create_group(self, name: str, targets: list):
-        """Create a temporary target group"""
-        payload = {
-            'name': name,
-            'targets': targets
-        }
-        _, data = self._request('POST', '/groups/', data=payload)
-        return data
-
-    def delete_group(self, group_id: int):
+    def delete_group(self, group_id):
         try:
             self._request('DELETE', f'/groups/{group_id}')
         except Exception:
             pass
 
+    def create_campaign(self, payload: dict) -> dict:
+        code, data = self._request('POST', '/campaigns/', data=payload)
+        if code not in (200, 201):
+            print(f"  [GoPhish API] create_campaign failed (HTTP {code})")
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def get_campaign_results(self, campaign_id) -> dict:
+        code, data = self._request('GET', f'/campaigns/{campaign_id}/results')
+        if code != 200:
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def complete_campaign(self, campaign_id):
+        try:
+            self._request('GET', f'/campaigns/{campaign_id}/complete')
+        except Exception:
+            pass
+
+    def ping(self) -> bool:
+        """Return True if we can reach the API with a valid key"""
+        try:
+            code, _ = self._request('GET', '/campaigns/')
+            return code == 200
+        except Exception:
+            return False
+
 
 # ---------------------------------------------------------------------------
-# Helper to lookup resource by name
+# Helpers
 # ---------------------------------------------------------------------------
 
 def _find_by_name(items: list, name: str):
-    """Find a resource dict in a list by its 'name' field (case-insensitive)"""
-    name_lower = name.lower()
+    """Case-insensitive name lookup in a list of resource dicts"""
+    name_lower = name.lower().strip()
     for item in items:
-        if isinstance(item, dict) and item.get('name', '').lower() == name_lower:
-            return item
+        if isinstance(item, dict):
+            if item.get('name', '').lower().strip() == name_lower:
+                return item
     return None
 
-
-# ---------------------------------------------------------------------------
-# Result counter from GoPhish campaign events
-# ---------------------------------------------------------------------------
 
 def _count_results(results_data: dict):
     """
     Parse GoPhish campaign results into counters.
-    GoPhish result statuses:
+    GoPhish result statuses (current):
       'Email Sent', 'Email Opened', 'Clicked Link',
       'Submitted Data', 'Email Reported'
     """
-    sent = 0
-    opened = 0
-    clicked = 0
-    submitted = 0
-    reported = 0  # Reported as phishing (user flagged it)
-
+    sent = opened = clicked = submitted = reported = 0
     for r in results_data.get('results', []):
         status = r.get('status', '')
-        if status in ('Email Sent', 'Email Opened', 'Clicked Link',
-                      'Submitted Data', 'Email Reported'):
+        # Every result entry represents one target
+        if status in ('Email Sent', 'Email Opened',
+                      'Clicked Link', 'Submitted Data', 'Email Reported'):
             sent += 1
         if status in ('Email Opened', 'Clicked Link',
                       'Submitted Data', 'Email Reported'):
@@ -169,7 +172,6 @@ def _count_results(results_data: dict):
             submitted += 1
         if status == 'Email Reported':
             reported += 1
-
     return sent, opened, clicked, submitted, reported
 
 
@@ -182,12 +184,12 @@ class GoPhishModule(BaseModule):
 
     def __init__(self):
         super().__init__()
-        self.name = "GoPhish Simulation"
-        self.description = "Phishing email awareness & detection testing via GoPhish API"
-        self.detected = False
+        self.name            = "GoPhish Simulation"
+        self.description     = "Phishing email awareness & detection testing via GoPhish API"
+        self.detected        = False
         self.gophish_results = {}
-        self.offline_demo = False
-        self._config = self._load_config()
+        self.offline_demo    = False
+        self._config         = self._load_config()
 
     # ------------------------------------------------------------------
     # Config
@@ -196,17 +198,17 @@ class GoPhishModule(BaseModule):
     def _load_config(self) -> dict:
         config_path = os.path.join(os.path.dirname(__file__), 'gophish_config.json')
         defaults = {
-            "host": "http://127.0.0.1:3333",
-            "api_key": "",
-            "campaign_name": "AV_Benchmark_Test",
-            "smtp_profile": "",
-            "email_template": "",
-            "landing_page": "",
-            "target_email": "test@example.local",
-            "target_first_name": "Test",
-            "target_last_name": "Target",
+            "host":                  "http://127.0.0.1:3333",
+            "api_key":               "",
+            "campaign_name":         "AV_Benchmark_Test",
+            "smtp_profile":          "",
+            "email_template":        "",
+            "landing_page":          "",
+            "target_email":          "test@example.local",
+            "target_first_name":     "Test",
+            "target_last_name":      "Target",
             "poll_duration_seconds": 60,
-            "offline_demo_mode": False
+            "offline_demo_mode":     False,
         }
         if os.path.exists(config_path):
             try:
@@ -219,120 +221,139 @@ class GoPhishModule(BaseModule):
 
     def get_info(self) -> dict:
         return {
-            'id': self.module_id,
-            'name': self.name,
-            'description': self.description
+            'id':          self.module_id,
+            'name':        self.name,
+            'description': self.description,
         }
 
     # ------------------------------------------------------------------
     # Offline demo mode
     # ------------------------------------------------------------------
 
-    def _run_offline_demo(self, monitor: SystemMonitor, start_time: float):
-        """Return plausible demo results when server is unreachable"""
+    def _run_offline_demo(self, monitor: SystemMonitor, start_time: float,
+                          reason: str = ""):
+        """Return plausible demo results without hitting the server"""
         import random
-        print("[GoPhish] Running in OFFLINE DEMO mode")
-        time.sleep(2)  # Simulate some work
+        msg = f"[GoPhish] OFFLINE DEMO MODE" + (f" ({reason})" if reason else "")
+        print(msg)
+        time.sleep(2)
         monitor.stop()
 
-        self.offline_demo = True
-        self.detected = False  # Demo: email wasn't flagged
+        self.offline_demo    = True
+        self.detected        = False
 
         self.gophish_results = {
-            'campaign_id': 'DEMO',
-            'campaign_status': 'Completed (Demo)',
-            'emails_sent': 5,
-            'emails_opened': random.randint(1, 4),
-            'links_clicked': random.randint(0, 2),
+            'campaign_id':           'DEMO',
+            'campaign_status':       'Completed (Demo)',
+            'emails_sent':           5,
+            'emails_opened':         random.randint(1, 4),
+            'links_clicked':         random.randint(0, 2),
             'credentials_submitted': random.randint(0, 1),
-            'emails_flagged_spam': 0,
+            'emails_flagged_spam':   0,
         }
         self.execution_time = time.time() - start_time
-        self.metrics = monitor.get_results()
-        self.status = "Completed (Demo)"
+        self.metrics        = monitor.get_results()
+        self.status         = "Completed (Demo)"
 
     # ------------------------------------------------------------------
     # Live GoPhish run
     # ------------------------------------------------------------------
 
     def _run_live(self, monitor: SystemMonitor, start_time: float) -> bool:
-        cfg = self._config
+        cfg    = self._config
         client = GoPhishClient(cfg['host'], cfg['api_key'])
 
         print(f"[GoPhish] Connecting to {cfg['host']} ...")
 
-        # ---- Resolve resources ----
-        try:
-            smtp_list  = client.get_smtp_profiles()
-            tpl_list   = client.get_templates()
-            page_list  = client.get_pages()
-        except Exception as e:
-            print(f"[GoPhish] ERROR connecting to server: {e}")
+        # ---- Connectivity check ----
+        if not client.ping():
+            print(f"[GoPhish] Cannot reach server at {cfg['host']}")
             return False
+        print("[GoPhish] Connected OK")
 
-        smtp  = _find_by_name(smtp_list,  cfg['smtp_profile'])
-        tpl   = _find_by_name(tpl_list,   cfg['email_template'])
-        page  = _find_by_name(page_list,  cfg['landing_page'])
+        # ---- Resolve resources ----
+        smtp_list = client.get_smtp_profiles()
+        tpl_list  = client.get_templates()
+        page_list = client.get_pages()
+
+        print(f"[GoPhish] Found {len(smtp_list)} SMTP profile(s), "
+              f"{len(tpl_list)} template(s), {len(page_list)} landing page(s)")
+
+        smtp = _find_by_name(smtp_list, cfg['smtp_profile'])
+        tpl  = _find_by_name(tpl_list,  cfg['email_template'])
+        page = _find_by_name(page_list, cfg['landing_page'])
 
         missing = []
         if not smtp:
-            missing.append(f"SMTP profile '{cfg['smtp_profile']}'")
+            names = [s.get('name') for s in smtp_list]
+            missing.append(
+                f"SMTP '{cfg['smtp_profile']}' (available: {names})"
+            )
         if not tpl:
-            missing.append(f"Email template '{cfg['email_template']}'")
+            names = [t.get('name') for t in tpl_list]
+            missing.append(
+                f"Template '{cfg['email_template']}' (available: {names})"
+            )
         if not page:
-            missing.append(f"Landing page '{cfg['landing_page']}'")
+            names = [p.get('name') for p in page_list]
+            missing.append(
+                f"Landing page '{cfg['landing_page']}' (available: {names})"
+            )
 
         if missing:
-            print(f"[GoPhish] Missing GoPhish resources: {', '.join(missing)}")
-            print("[GoPhish] Please create them in the GoPhish web UI first.")
+            print("[GoPhish] Missing resources - cannot create campaign:")
+            for m in missing:
+                print(f"  - {m}")
             return False
 
         # ---- Create temporary target group ----
-        group_name = f"BenchMark_Group_{int(time.time())}"
+        group_name = f"BM_Group_{int(time.time())}"
         target = {
             'first_name': cfg.get('target_first_name', 'Test'),
-            'last_name':  cfg.get('target_last_name', 'Target'),
+            'last_name':  cfg.get('target_last_name',  'Target'),
             'email':      cfg['target_email'],
             'position':   'Benchmark Target',
         }
-        print(f"[GoPhish] Creating target group: {group_name}")
+        print(f"[GoPhish] Creating group '{group_name}'...")
         group_data = client.create_group(group_name, [target])
-        group_id = group_data.get('id')
+        group_id   = group_data.get('id')
 
         if not group_id:
             print("[GoPhish] Failed to create target group")
             return False
 
         # ---- Create campaign ----
-        launch_time = (datetime.datetime.utcnow() +
-                       datetime.timedelta(seconds=5)).strftime('%Y-%m-%dT%H:%M:%S+00:00')
+        # Launch 5 seconds from now (UTC)
+        launch_dt   = datetime.datetime.utcnow() + datetime.timedelta(seconds=5)
+        launch_time = launch_dt.strftime('%Y-%m-%dT%H:%M:%S+00:00')
 
         campaign_payload = {
-            'name':           cfg['campaign_name'],
-            'template':       {'name': tpl['name']},
-            'landing_page':   {'name': page['name']},
-            'smtp':           {'name': smtp['name']},
-            'launch_date':    launch_time,
-            'groups':         [{'name': group_name}],
+            'name':         cfg['campaign_name'],
+            'template':     {'name': tpl['name']},
+            'landing_page': {'name': page['name']},
+            'smtp':         {'name': smtp['name']},
+            'launch_date':  launch_time,
+            'url':          f"http://{cfg['host'].split('//')[1].split(':')[0]}:8081",
+            'groups':       [{'name': group_name}],
         }
 
         print("[GoPhish] Creating campaign...")
         campaign_data = client.create_campaign(campaign_payload)
-        campaign_id = campaign_data.get('id')
+        campaign_id   = campaign_data.get('id')
 
         if not campaign_id:
-            print("[GoPhish] Failed to create campaign")
+            print(f"[GoPhish] create_campaign returned: {campaign_data}")
             client.delete_group(group_id)
             return False
 
-        print(f"[GoPhish] Campaign created (ID: {campaign_id}). "
+        print(f"[GoPhish] Campaign ID={campaign_id}. "
               f"Polling for {cfg['poll_duration_seconds']}s ...")
 
         # ---- Poll results ----
-        poll_secs = int(cfg.get('poll_duration_seconds', 60))
-        poll_interval = 5
-        elapsed = 0
-
+        poll_secs      = int(cfg.get('poll_duration_seconds', 60))
+        poll_interval  = 5
+        elapsed        = 0
+        campaign_status = 'Unknown'
         sent = opened = clicked = submitted = flagged = 0
 
         while elapsed < poll_secs:
@@ -340,38 +361,39 @@ class GoPhishModule(BaseModule):
             elapsed += poll_interval
 
             try:
-                results_data = client.get_campaign_results(campaign_id)
-                sent, opened, clicked, submitted, flagged = _count_results(results_data)
-                campaign_status = results_data.get('status', 'Unknown')
-                print(f"[GoPhish] Poll {elapsed}s | Sent:{sent} "
+                results_data    = client.get_campaign_results(campaign_id)
+                campaign_status = results_data.get('status', campaign_status)
+                sent, opened, clicked, submitted, flagged = \
+                    _count_results(results_data)
+                print(f"  [Poll {elapsed:3d}s] Sent:{sent} "
                       f"Opened:{opened} Clicked:{clicked} "
-                      f"Submitted:{submitted} Flagged:{flagged}")
+                      f"Submitted:{submitted} Flagged:{flagged} "
+                      f"Status:{campaign_status}")
             except Exception as e:
-                print(f"[GoPhish] Poll error: {e}")
+                print(f"  [Poll {elapsed:3d}s] Error: {e}")
 
-        # ---- Complete campaign (clean up) ----
+        # ---- Finalise ----
         client.complete_campaign(campaign_id)
         client.delete_group(group_id)
 
-        # Detection: if zero emails were opened and at least one was sent,
-        # the email was likely blocked or flagged by email security
+        # Detection logic: email was blocked if it was sent but never opened
+        # AND email was reported as phishing/spam
         self.detected = (sent > 0 and opened == 0 and flagged > 0)
 
         self.gophish_results = {
-            'campaign_id':            campaign_id,
-            'campaign_status':        campaign_status if 'campaign_status' in dir() else 'Completed',
-            'emails_sent':            sent,
-            'emails_opened':          opened,
-            'links_clicked':          clicked,
-            'credentials_submitted':  submitted,
-            'emails_flagged_spam':    flagged,
+            'campaign_id':           campaign_id,
+            'campaign_status':       campaign_status,
+            'emails_sent':           sent,
+            'emails_opened':         opened,
+            'links_clicked':         clicked,
+            'credentials_submitted': submitted,
+            'emails_flagged_spam':   flagged,
         }
 
         monitor.stop()
         self.execution_time = time.time() - start_time
-        self.metrics = monitor.get_results()
-        self.status = "Completed"
-
+        self.metrics        = monitor.get_results()
+        self.status         = "Completed"
         return True
 
     # ------------------------------------------------------------------
@@ -379,8 +401,8 @@ class GoPhishModule(BaseModule):
     # ------------------------------------------------------------------
 
     def run(self, monitor: SystemMonitor) -> bool:
+        start_time = time.time()
         try:
-            start_time = time.time()
             self.status = "Running"
             monitor.start()
 
@@ -392,25 +414,45 @@ class GoPhishModule(BaseModule):
             )
 
             if use_demo:
-                self._run_offline_demo(monitor, start_time)
-                return True
-            else:
-                ok = self._run_live(monitor, start_time)
-                if not ok:
-                    print("[GoPhish] Live run failed, falling back to demo mode")
-                    self._run_offline_demo(monitor, start_time)
+                self._run_offline_demo(monitor, start_time,
+                                       reason="offline_demo_mode=true or no API key")
                 return True
 
+            # --- Try live ---
+            try:
+                ok = self._run_live(monitor, start_time)
+            except Exception as live_err:
+                print(f"[GoPhish] Live error: {live_err}")
+                ok = False
+
+            if not ok:
+                # Fallback to demo so results are still usable
+                print("[GoPhish] Falling back to OFFLINE DEMO mode")
+                # Monitor may already be stopped if _run_live stopped it partway
+                if monitor.monitoring:
+                    monitor.stop()
+                # Re-start a fresh monitor for demo timing
+                monitor2 = type(monitor)()
+                monitor2.start()
+                self._run_offline_demo(monitor2, start_time,
+                                       reason="server unreachable or config issue")
+            return True
+
         except Exception as e:
-            print(f"[GoPhish] Unexpected error: {e}")
+            print(f"[GoPhish] FATAL error: {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
             self.status = "Failed"
-            monitor.stop()
+            try:
+                if monitor.monitoring:
+                    monitor.stop()
+            except Exception:
+                pass
             self.execution_time = time.time() - start_time
-            self.metrics = monitor.get_results()
+            self.metrics        = monitor.get_results()
             return False
 
     def get_results(self) -> dict:
-        """Get test results"""
         return {
             'module_id':       self.module_id,
             'name':            self.name,

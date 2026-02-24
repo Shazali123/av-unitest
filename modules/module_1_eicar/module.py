@@ -1,23 +1,30 @@
 """
 Module 1: EICAR Test
-Generates EICAR test file and monitors for antivirus detection
+Generates EICAR test file and monitors for antivirus detection.
+
+Detection strategy:
+  1. Check BEFORE write - if baseline file check passes
+  2. Write EICAR string
+  3. Immediately poll file existence and content every 50ms for up to 10s
+  4. Also handles the case where WD quarantines so fast the file
+     never appears (detected = True if write succeeded but file is
+     already gone on first check).
 """
 
 import os
 import time
 import sys
 
-# Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from base_module import BaseModule
 from system_monitor import SystemMonitor
 
 
-# Standard EICAR test string split across two parts to avoid triggering AV during build
-_EICAR_PART1 = r'X5O!P%@AP[4\PZX54(P^)7CC)7}'
-_EICAR_PART2 = r'$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*'
-EICAR_STRING = _EICAR_PART1 + _EICAR_PART2
+# Split EICAR string so our own AV doesn't flag this source file
+_P1 = r'X5O!P%@AP[4\PZX54(P^)7CC)7}'
+_P2 = r'$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*'
+EICAR_STRING = _P1 + _P2
 
 
 class EICARModule(BaseModule):
@@ -33,123 +40,154 @@ class EICARModule(BaseModule):
         self.detection_notes = ""
 
     def get_info(self) -> dict:
-        """Get module information"""
         return {
             'id': self.module_id,
             'name': self.name,
             'description': self.description
         }
 
-    def _check_file_neutralised(self, path: str) -> bool:
+    def _file_is_neutralised(self, path: str) -> bool:
         """
-        Check if AV has neutralised the file by:
-        1. File was deleted/quarantined (not exists), OR
-        2. File still exists but EICAR content was wiped/replaced
+        Return True if AV has neutralised the file:
+        - File no longer exists (quarantined / deleted), OR
+        - File exists but content no longer matches EICAR string (wiped)
         """
         if not os.path.exists(path):
-            return True  # Deleted / quarantined
+            return True   # Deleted / quarantined
 
-        # Check file content - if AV replaced content, it won't match EICAR string
         try:
             with open(path, 'r', errors='replace') as f:
-                content = f.read().strip()
-            if content != EICAR_STRING.strip():
-                return True  # Content was neutralised
-        except Exception:
-            pass  # Can't read = likely quarantined/locked
+                content = f.read()
+            # Content wiped or replaced by AV
+            if EICAR_STRING not in content:
+                return True
+        except (PermissionError, OSError):
+            # AV locked / quarantined the file - counts as detected
+            return True
 
         return False
 
     def run(self, monitor: SystemMonitor) -> bool:
-        """
-        Execute EICAR test
-
-        Creates EICAR test file and monitors for AV detection
-        """
         try:
             start_time = time.time()
             self.status = "Running"
 
-            # Start monitoring
             monitor.start()
 
-            # Create test file in temp directory
+            # --- Prepare temp dir ---
             temp_dir = os.path.join(os.path.dirname(__file__), 'temp')
             os.makedirs(temp_dir, exist_ok=True)
-
             self.test_file_path = os.path.join(temp_dir, 'eicar_test.txt')
 
-            print(f"[EICAR] Creating test file at: {self.test_file_path}")
+            # --- Remove any stale file from previous run ---
+            if os.path.exists(self.test_file_path):
+                try:
+                    os.remove(self.test_file_path)
+                except Exception:
+                    pass
+                time.sleep(0.1)
 
-            # Write EICAR string to file
-            with open(self.test_file_path, 'w') as f:
-                f.write(EICAR_STRING)
+            print(f"[EICAR] Writing test file: {self.test_file_path}")
 
-            print("[EICAR] Test file created, monitoring for AV detection...")
+            # --- Write EICAR string ---
+            write_succeeded = False
+            try:
+                with open(self.test_file_path, 'w') as f:
+                    f.write(EICAR_STRING)
+                write_succeeded = True
+                print("[EICAR] File written. Monitoring for AV detection...")
+            except PermissionError:
+                # Some AVs block the write itself — that IS a detection
+                print("[EICAR] Write was blocked by AV (PermissionError)")
+                self.detected = True
+                self.detection_verdict = "DETECTED"
+                self.detection_notes = (
+                    "AV blocked the file write operation itself (PermissionError)"
+                )
+                monitor.mark_detection()
 
-            # Give AV a moment to process the newly created file
-            time.sleep(0.2)
-
-            # Wait and monitor for detection (max 8 seconds)
-            detection_window = 8.0
-            check_interval = 0.1
-            elapsed = 0.0
-
-            while elapsed < detection_window:
-                if self._check_file_neutralised(self.test_file_path):
+            if write_succeeded:
+                # --- Immediate check: WD can quarantine within <100ms ---
+                # Check right away before first sleep
+                if self._file_is_neutralised(self.test_file_path):
+                    elapsed_at_detect = time.time() - start_time
                     self.detected = True
                     self.detection_verdict = "DETECTED"
-                    self.detection_notes = "AV removed or neutralised the EICAR test file"
+                    self.detection_notes = (
+                        "AV removed or neutralised the EICAR file (near-instant)"
+                    )
                     monitor.mark_detection()
-                    print(f"[EICAR] Detection confirmed at {round(elapsed, 2)}s "
-                          f"(file removed/neutralised by AV)")
-                    break
+                    print(f"[EICAR] Detection confirmed immediately "
+                          f"({elapsed_at_detect:.2f}s)")
 
-                time.sleep(check_interval)
-                elapsed += check_interval
+                else:
+                    # --- Poll loop: 50ms interval, 10s max ---
+                    detection_window = 10.0
+                    check_interval   = 0.05   # 50ms — fast enough to catch WD
+                    elapsed          = 0.0
 
-            if not self.detected:
-                self.detection_verdict = "NOT DETECTED"
-                self.detection_notes = (
-                    "EICAR file survived full detection window. "
-                    "AV may be disabled or not monitoring write activity."
-                )
-                print("[EICAR] No detection within time window")
+                    while elapsed < detection_window and not self.detected:
+                        time.sleep(check_interval)
+                        elapsed += check_interval
 
-            # Stop monitoring
+                        if self._file_is_neutralised(self.test_file_path):
+                            elapsed_at_detect = time.time() - start_time
+                            self.detected = True
+                            self.detection_verdict = "DETECTED"
+                            self.detection_notes = (
+                                f"AV removed/neutralised EICAR file "
+                                f"at {elapsed:.2f}s into polling"
+                            )
+                            monitor.mark_detection()
+                            print(f"[EICAR] Detection confirmed at "
+                                  f"{elapsed_at_detect:.2f}s")
+                            break
+
+                    if not self.detected:
+                        self.detection_verdict = "NOT DETECTED"
+                        self.detection_notes = (
+                            "EICAR file survived full 10s detection window. "
+                            "Real-time protection may be disabled."
+                        )
+                        print("[EICAR] No detection within 10s window")
+
+            # --- Stop monitoring ---
             monitor.stop()
 
-            # Clean up if file still exists
+            # --- Cleanup ---
             if os.path.exists(self.test_file_path):
                 try:
                     os.remove(self.test_file_path)
                     print("[EICAR] Test file cleaned up")
                 except Exception:
-                    print("[EICAR] Warning: Could not remove test file (may be quarantined)")
+                    print("[EICAR] Note: File already quarantined (cannot remove)")
 
             self.execution_time = time.time() - start_time
             self.metrics = monitor.get_results()
             self.status = "Completed"
-
             return True
 
         except Exception as e:
-            print(f"[EICAR] Error: {e}")
+            print(f"[EICAR] Unexpected error: {e}")
             self.status = "Failed"
             self.detection_verdict = "ERROR"
             self.detection_notes = str(e)
-            monitor.stop()
+            try:
+                monitor.stop()
+            except Exception:
+                pass
+            self.execution_time = time.time() - start_time
+            self.metrics = monitor.get_results()
             return False
 
     def get_results(self) -> dict:
-        """Get test results"""
         return {
-            'module_id': self.module_id,
-            'name': self.name,
-            'execution_time': round(self.execution_time, 2),
-            'status': self.status,
-            'detected': self.detected,
-            'detection_verdict': self.detection_verdict,
-            'detection_notes': self.detection_notes,
-            'metrics': self.metrics
+            'module_id':          self.module_id,
+            'name':               self.name,
+            'execution_time':     round(self.execution_time, 2),
+            'status':             self.status,
+            'detected':           self.detected,
+            'detection_verdict':  self.detection_verdict,
+            'detection_notes':    self.detection_notes,
+            'metrics':            self.metrics,
         }
