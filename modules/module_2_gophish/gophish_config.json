@@ -1,0 +1,13 @@
+{
+  "host": "https://192.168.1.121:3333",
+  "api_key": "b983e8fbda735eb014e8bd0025189da2a6b3dbf732c6a06e3833e09173da1894",
+  "campaign_name": "AV_Benchmark_Test",
+  "smtp_profile": "Internal Test SMTP",
+  "email_template": "Phishing Test Email",
+  "landing_page": "Credential Harvest",
+  "target_email": "test_target@yourdomain.local",
+  "target_first_name": "Test",
+  "target_last_name": "Target",
+  "poll_duration_seconds": 60,
+  "offline_demo_mode": false
+}
