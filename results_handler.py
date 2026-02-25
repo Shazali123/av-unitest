@@ -59,6 +59,7 @@ class ResultsHandler:
     # ------------------------------------------------------------------
 
     def _format_gophish(self, result: dict) -> List[str]:
+
         lines   = []
         gp      = result.get('gophish_results', {})
         offline = result.get('offline_demo', False)
@@ -98,6 +99,41 @@ class ResultsHandler:
 
         return lines
 
+    # ------------------------------------------------------------------
+    # Atomic section
+    # ------------------------------------------------------------------
+
+    def _format_atomic(self, result: dict) -> List[str]:
+        lines    = []
+        tests    = result.get('test_results', [])
+        detected = result.get('detected', False)
+
+        lines.append(self._verdict_line(detected))
+
+        if not tests:
+            lines.append("  No test results recorded.")
+            return lines
+
+        lines.append("  ATT\u0026CK Test Results:")
+        lines.append(f"  {'\u2500' * 56}")
+
+        for t in tests:
+            tid     = t.get('tid', '???????')
+            tname   = t.get('name', t.get('test', 'Unknown'))
+            det     = t.get('detected', False)
+            detail  = t.get('detail', '')
+            elapsed = t.get('elapsed', '')
+            badge   = '[DETECTED]    ' if det else '[NOT DETECTED]'
+            lines.append(f"    {badge}  {tid:<12}  {tname}")
+            if detail:
+                lines.append(f"                       Detail  : {detail}")
+            if elapsed:
+                lines.append(f"                       Elapsed : {elapsed}s")
+
+        n_det = sum(1 for t in tests if t.get('detected', False))
+        lines.append(f"  {'\u2500' * 56}")
+        lines.append(f"  Overall: {n_det}/{len(tests)} techniques DETECTED by AV")
+        return lines
 
     # ------------------------------------------------------------------
     # Main compile
@@ -141,8 +177,11 @@ class ResultsHandler:
             elif name == "GoPhish Simulation":
                 output.extend(self._format_gophish(result))
 
-            # Generic test_results block (Atomic etc.)
-            if 'test_results' in result:
+            elif name == "Atomic Red Team":
+                output.extend(self._format_atomic(result))
+
+            # Generic fallback for any other module with test_results
+            elif 'test_results' in result:
                 output.append("  Individual Test Results:")
                 for test in result['test_results']:
                     status_text = "[DETECTED]" if test['detected'] else "[NOT DETECTED]"
