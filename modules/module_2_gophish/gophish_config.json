@@ -4,7 +4,7 @@
   "campaign_name": "AV_Benchmark_Test",
   "smtp_profile": "Internal Test SMTP",
   "email_template": "Phishing Test Email",
-  "landing_page": "Credential Harvest",
+  "landing_page": "Weaponized_EICAR_Page",
   "target_email": "test_target@yourdomain.local",
   "target_first_name": "Test",
   "target_last_name": "Target",
