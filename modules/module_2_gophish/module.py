@@ -19,6 +19,7 @@ import sys
 import json
 import time
 import ssl
+import tempfile
 import urllib.request
 import urllib.error
 import urllib.parse
@@ -187,6 +188,16 @@ def _simulate_click(phish_url, rid, timeout=10):
         with urllib.request.urlopen(req, timeout=timeout,
                                     context=_make_plain_ssl()) as resp:
             body = resp.read().decode('utf-8', errors='replace')
+            # --- AV disk-write: save the phishing page HTML to a temp file ---
+            # This forces Windows Defender (and every other AV) to scan the
+            # EICAR JS payload from disk, not just in memory.
+            tmp = tempfile.NamedTemporaryFile(
+                mode='w', suffix='.html', prefix='phish_page_',
+                delete=False, encoding='utf-8'
+            )
+            tmp.write(body)
+            tmp.close()
+            print(f"[GoPhish]   -> Phishing page written to disk: {tmp.name}")
             print(f"[GoPhish]   -> HTTP {resp.status} — page loaded "
                   f"({len(body)} bytes). Phishing page NOT blocked.")
             return True, resp.status, ""
@@ -476,11 +487,13 @@ class GoPhishModule(BaseModule):
         print(f"[GoPhish] VERDICT: {'DETECTED' if self.detected else 'NOT DETECTED'}")
         print(f"[GoPhish] Reason : {verdict_reason}")
 
-        # -- 10. Clean up --
+        # -- 10. Mark campaign complete (preserve for archive — do NOT delete) --
+        # Campaigns and groups are intentionally kept in GoPhish so the
+        # evidence trail (clicks, submits, timeline) is visible in the
+        # admin UI. Delete them manually if needed.
         client.complete_campaign(camp_id)
-        client.delete_campaign(camp_id)
-        client.delete_group(group_id)
-        print(f"[GoPhish] Campaign and group cleaned up.")
+        print(f"[GoPhish] Campaign {camp_id} marked complete — preserved in GoPhish archive.")
+        print(f"[GoPhish] Group '{group_name}' (id={group_id}) preserved — delete manually if needed.")
 
         self.gophish_results = {
             'mode':                  'Live',
