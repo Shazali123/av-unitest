@@ -3,8 +3,19 @@ Results Handler - Compiles and exports test results
 """
 
 import os
+import json
+import uuid
+import urllib.request
+import urllib.error
 from datetime import datetime
 from typing import List, Dict
+
+try:
+    from score_calculator import calculate_scores
+except ImportError:
+    def calculate_scores(module_results):
+        return {"detection_score": 0.0, "performance_score": 0.0,
+                "physical_total": 0.0, "breakdown": {}}
 
 
 class ResultsHandler:
@@ -290,6 +301,30 @@ class ResultsHandler:
 
         output.append("=" * 62)
 
+        # === PHYSICAL SCORE ===
+        scores = calculate_scores(module_results)
+        bd     = scores.get('breakdown', {})
+        output.append("")
+        output.append("=" * 62)
+        output.append("  PHYSICAL SCORE  (Detection 50% + Performance 30%)")
+        output.append("-" * 62)
+        output.append(f"  Detection Score   : {scores['detection_score']:>5.2f} / 5.00")
+        output.append(f"    Modules detected   : {bd.get('detected_count',0)}/{bd.get('total_modules',0)}"
+                      f"  (+{bd.get('rate_score',0):.2f} pts)")
+        best_lat = bd.get('best_latency_s')
+        if best_lat is not None:
+            output.append(f"    Best latency       : {best_lat:.2f}s  (+{bd.get('speed_score',0):.2f} pts)")
+        else:
+            output.append(f"    Best latency       : N/A  (+0.00 pts — no detection recorded)")
+        output.append(f"  Performance Score : {scores['performance_score']:>5.2f} / 3.00")
+        output.append(f"    CPU avg            : {bd.get('agg_cpu_avg',0):.1f}%")
+        output.append(f"    RAM peak           : {bd.get('agg_ram_peak_mb',0):.1f} MB")
+        output.append(f"    Disk write         : {bd.get('agg_disk_write_mb',0):.1f} MB")
+        output.append(f"  {'─' * 38}")
+        output.append(f"  Physical Total    : {scores['physical_total']:>5.2f} / 8.00")
+        output.append(f"  (Usability 2.00 pts scored separately by comparison website)")
+        output.append("=" * 62)
+
         return "\n".join(output)
 
     # ------------------------------------------------------------------
@@ -304,7 +339,92 @@ class ResultsHandler:
 
         return filepath
 
-    def upload_to_server(self, results_text: str) -> bool:
-        """Placeholder for server upload (Phase 3/4)"""
-        print("[ResultsHandler] Upload to server - Not implemented (Phase 3/4)")
-        return False
+    # ------------------------------------------------------------------
+    # Upload & Payload
+    # ------------------------------------------------------------------
+
+    def build_upload_payload(self, module_results: List[Dict], av_name: str) -> dict:
+        """Assemble the JSON payload dict for the server upload."""
+        scores = calculate_scores(module_results)
+        bd     = scores.get('breakdown', {})
+
+        # Per-module detected booleans (by canonical name)
+        def _mod_detected(name_fragment):
+            for r in module_results:
+                if name_fragment.lower() in r.get('name', '').lower():
+                    return 1 if r.get('detected', False) else 0
+            return 0
+
+        def _abae_verdict():
+            for r in module_results:
+                if 'abae' in r.get('name', '').lower():
+                    return r.get('abae_verdict', 'NOT RUN')
+            return 'NOT RUN'
+
+        payload = {
+            "av_name":                   av_name,
+            "run_id":                    f"run_{str(uuid.uuid4())[:8]}",
+            "detection_score":           scores['detection_score'],
+            "performance_score":         scores['performance_score'],
+            "physical_total":            scores['physical_total'],
+            "eicar_detected":            _mod_detected('eicar'),
+            "gophish_detected":          _mod_detected('gophish'),
+            "atomic_detected":           _mod_detected('atomic'),
+            "abae_detected":             _mod_detected('abae'),
+            "abae_verdict":              _abae_verdict(),
+            "best_detection_latency_s":  bd.get('best_latency_s'),
+            "cpu_avg":                   bd.get('agg_cpu_avg', 0),
+            "ram_peak_mb":               bd.get('agg_ram_peak_mb', 0),
+            "disk_write_mb":             bd.get('agg_disk_write_mb', 0),
+            "raw_json":                  json.dumps(module_results),
+        }
+        return payload
+
+    def upload_to_server(self, module_results: List[Dict], av_name: str,
+                         server_url: str) -> tuple:
+        """
+        Build payload, POST to server, return (success: bool, message: str).
+        message contains the run_id on success or error detail on failure.
+        """
+        payload = self.build_upload_payload(module_results, av_name)
+        run_id  = payload['run_id']
+
+        print(f"[Upload] Physical Score: {payload['physical_total']:.2f}/8.00")
+        print(f"[Upload] Uploading run '{run_id}' to {server_url} ...")
+
+        try:
+            json_bytes = json.dumps(payload).encode('utf-8')
+            req = urllib.request.Request(
+                server_url,
+                data=json_bytes,
+                headers={'Content-Type': 'application/json'},
+                method='POST',
+            )
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                body = resp.read().decode('utf-8')
+
+            try:
+                resp_json = json.loads(body)
+                if resp_json.get('status') == 'ok':
+                    msg = (f"Saved  run_id={resp_json.get('run_id', run_id)}  "
+                           f"id={resp_json.get('id', '?')}  "
+                           f"at {resp_json.get('timestamp', '?')}")
+                    print(f"[Upload] Server OK — {msg}")
+                    return True, msg
+                else:
+                    err = resp_json.get('message', body)
+                    print(f"[Upload] Server returned error: {err}")
+                    return False, f"Server error: {err}"
+            except json.JSONDecodeError:
+                # Non-JSON response (old PHP echo)
+                print(f"[Upload] Server raw response: {body}")
+                return True, body
+
+        except urllib.error.URLError as e:
+            msg = f"Network error — is the server reachable? ({e.reason})"
+            print(f"[Upload] FAILED: {msg}")
+            return False, msg
+        except Exception as e:
+            msg = f"Unexpected error: {e}"
+            print(f"[Upload] FAILED: {msg}")
+            return False, msg

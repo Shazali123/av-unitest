@@ -1,6 +1,6 @@
 """
 AV Benchmark Testing Framework - Main Application
-Phase 1: Core benchmark with modular testing
+Phase 5: Score calculation + Upload to Ubuntu SQLite server
 """
 
 import customtkinter as ctk
@@ -46,7 +46,10 @@ class _TextRedirector:
 
 class BenchmarkApp(ctk.CTk):
     """Main application window"""
-    
+
+    # --- Server config (change IP/port here if your Ubuntu VM moves) ---
+    SERVER_URL = "http://192.168.1.121:8090/upload_results.php"
+
     def __init__(self):
         super().__init__()
         
@@ -175,9 +178,10 @@ class BenchmarkApp(ctk.CTk):
     # Module descriptions shown in status bar during run
     # ------------------------------------------------------------------
     _MODULE_DESCRIPTIONS = {
-        "EICAR Test":          "Writing EICAR test file and monitoring for AV quarantine...",
-        "GoPhish Simulation":  "Connecting to GoPhish server and running phishing campaign...",
-        "Atomic Red Team":     "Executing Atomic Red Team attack simulations...",
+        "EICAR Test":             "Writing EICAR test file and monitoring for AV quarantine...",
+        "GoPhish Simulation":     "Connecting to GoPhish server and running phishing campaign...",
+        "Atomic Red Team":        "Executing Atomic Red Team attack simulations...",
+        "ABAE Behavioral Engine": "Running Adaptive Behavioral Anomaly Engine (5 behavioral tests)...",
     }
 
     def show_loading_screen(self):
@@ -337,17 +341,16 @@ class BenchmarkApp(ctk.CTk):
         )
         export_btn.pack(side="left", padx=10)
         
-        # Upload button (placeholder)
-        upload_btn = ctk.CTkButton(
+        # Upload button
+        self._upload_btn = ctk.CTkButton(
             button_frame,
             text="📤 Upload to Server",
             font=ctk.CTkFont(size=16, weight="bold"),
             height=45,
             width=200,
-            state="disabled",
             command=self.upload_results
         )
-        upload_btn.pack(side="left", padx=10)
+        self._upload_btn.pack(side="left", padx=10)
         
         # Run again button
         again_btn = ctk.CTkButton(
@@ -390,9 +393,66 @@ class BenchmarkApp(ctk.CTk):
             print(f"Export error: {e}")
             
     def upload_results(self):
-        """Placeholder for upload to server"""
-        # This will be implemented in Phase 3/4
-        pass
+        """Upload results to Ubuntu server in a background thread."""
+        module_results = getattr(self, 'module_results', None)
+        if not module_results:
+            self._upload_popup(False, "No benchmark results to upload. Run the benchmark first.")
+            return
+
+        av_name = getattr(self, 'av_name', 'Unknown AV')
+
+        # Disable button during upload to prevent double-submits
+        self._upload_btn.configure(state="disabled", text="⏳ Uploading...")
+
+        def _do_upload():
+            success, message = self.results_handler.upload_to_server(
+                module_results, av_name, self.SERVER_URL
+            )
+            self.after(0, lambda: self._upload_done(success, message))
+
+        threading.Thread(target=_do_upload, daemon=True).start()
+
+    def _upload_done(self, success: bool, message: str):
+        """Called on main thread when upload finishes."""
+        self._upload_btn.configure(
+            state="normal",
+            text="📤 Upload to Server"
+        )
+        self._upload_popup(success, message)
+
+    def _upload_popup(self, success: bool, message: str):
+        """Show upload result in a small popup window."""
+        popup = ctk.CTkToplevel(self)
+        popup.title("Upload Result")
+        popup.geometry("480x180")
+        popup.resizable(False, False)
+        popup.lift()
+        popup.focus_force()
+
+        icon  = "✅" if success else "❌"
+        color = "#2ecc71" if success else "#e74c3c"
+        label_text = f"{icon}  {'Upload Successful!' if success else 'Upload Failed'}"
+
+        ctk.CTkLabel(
+            popup,
+            text=label_text,
+            font=ctk.CTkFont(size=16, weight="bold"),
+            text_color=color,
+        ).pack(pady=(20, 6))
+
+        ctk.CTkLabel(
+            popup,
+            text=message,
+            font=ctk.CTkFont(size=12),
+            wraplength=440,
+        ).pack(pady=4, padx=20)
+
+        ctk.CTkButton(
+            popup,
+            text="OK",
+            width=100,
+            command=popup.destroy
+        ).pack(pady=14)
 
 
 def main():
