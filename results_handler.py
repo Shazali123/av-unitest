@@ -136,6 +136,65 @@ class ResultsHandler:
         return lines
 
     # ------------------------------------------------------------------
+    # ABAE section
+    # ------------------------------------------------------------------
+
+    def _format_abae(self, result: dict) -> List[str]:
+        lines   = []
+        tests   = result.get('test_results', [])
+        verdict = result.get('abae_verdict', 'NOT RUN')
+        detected = result.get('detected', False)
+
+        lines.append(self._verdict_line(detected))
+
+        if not tests:
+            lines.append("  No behavioral test results recorded.")
+            lines.append(f"  Signature-Independent Protection: {verdict}")
+            return lines
+
+        lines.append("  Behavioral Test Results:")
+        lines.append(f"  {'\u2500' * 56}")
+
+        for t in tests:
+            tid          = t.get('tid', '?????')
+            tname        = t.get('name', t.get('test', 'Unknown'))
+            det          = t.get('detected', False)
+            detail       = t.get('detail', '')
+            elapsed      = t.get('elapsed', '')
+            det_lat      = t.get('detection_latency', None)
+            extra        = t.get('extra', {})
+            badge        = '[DETECTED]    ' if det else '[NOT DETECTED]'
+            lines.append(f"    {badge}  {tid:<6}  {tname}")
+            if detail:
+                lines.append(f"                       Detail  : {detail[:120]}")
+            if det_lat:
+                lines.append(f"                       Latency : {det_lat}s")
+            if elapsed:
+                lines.append(f"                       Elapsed : {elapsed}s")
+            # Extra per-test metrics
+            if extra.get('files_modified_before_detection') is not None:
+                lines.append(f"                       Files modified before block : "
+                             f"{extra['files_modified_before_detection']}")
+            if extra.get('avg_entropy_bits'):
+                lines.append(f"                       Avg entropy : "
+                             f"{extra['avg_entropy_bits']} bits/byte")
+            if extra.get('processes_spawned') is not None:
+                lines.append(f"                       Processes spawned : "
+                             f"{extra['processes_spawned']}/{extra.get('processes_target', '?')}")
+            if extra.get('registry_op_success') is not None:
+                lines.append(f"                       Registry op success : "
+                             f"{extra['registry_op_success']}")
+            if extra.get('consistency_rate'):
+                lines.append(f"                       Consistency rate : "
+                             f"{extra['consistency_rate']}")
+
+        n_det = sum(1 for t in tests if t.get('detected', False))
+        lines.append(f"  {'\u2500' * 56}")
+        lines.append(f"  Detected: {n_det}/{len(tests)} behavioral anomaly tests")
+        lines.append(f"  Signature-Independent Protection: {verdict}")
+        return lines
+
+    # ------------------------------------------------------------------
     # Main compile
     # ------------------------------------------------------------------
 
@@ -179,6 +238,9 @@ class ResultsHandler:
 
             elif name == "Atomic Red Team":
                 output.extend(self._format_atomic(result))
+
+            elif name == "ABAE Behavioral Engine":
+                output.extend(self._format_abae(result))
 
             # Generic fallback for any other module with test_results
             elif 'test_results' in result:
