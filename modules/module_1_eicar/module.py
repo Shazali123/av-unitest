@@ -75,10 +75,15 @@ class EICARModule(BaseModule):
             monitor.start()
 
             # --- Prepare temp dir ---
-            # Use abspath so path resolves correctly when loaded via importlib
-            temp_dir = os.path.join(
+            # IMPORTANT: Write to the SYSTEM temp directory, NOT inside the
+            # project folder. The project folder is typically whitelisted in
+            # the AV settings (so the tool itself isn't quarantined), which
+            # means the AV would never scan a file placed there — defeating
+            # the whole purpose of the EICAR test.
+            # Using %TEMP% ensures the AV's real-time scanner sees the file.
+            temp_dir = os.environ.get('TEMP', os.environ.get('TMP', os.path.join(
                 os.path.dirname(os.path.abspath(__file__)), 'temp'
-            )
+            )))
             os.makedirs(temp_dir, exist_ok=True)
             self.test_file_path = os.path.join(temp_dir, 'eicar_test.txt')
 
