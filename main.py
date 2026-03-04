@@ -48,7 +48,7 @@ class BenchmarkApp(ctk.CTk):
     """Main application window"""
 
     # --- Server config (change IP/port here if your Ubuntu VM moves) ---
-    SERVER_URL = "http://192.168.1.121:8090/upload_results.php"
+    SERVER_URL = "http://192.168.1.121/upload_results.php"
 
     def __init__(self):
         super().__init__()
