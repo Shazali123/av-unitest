@@ -616,16 +616,21 @@ class GoPhishModule(BaseModule):
         )
         self.detected = (not click_success) or any_escalation_detected
 
-        if not click_success:
+        if not click_success and escalation_summary.get('triggered_level') is None and not lol_blocked:
             verdict_reason = f"Phishing URL was BLOCKED at network level: {block_reason}"
         elif any_escalation_detected:
             trig = escalation_summary.get('triggered_level')
+            level_labels = {
+                0: 'L0 — on-disk .html quarantine',
+                1: 'L1 — .ps1 heuristic quarantine',
+                2: 'L2 — PowerShell execution terminated',
+            }
             level_label = (
-                f"Level {trig} escalation" if trig is not None
-                else "Level 3 PowerShell LoL"
+                level_labels.get(trig, f'Level {trig}') if trig is not None
+                else 'L3 — PowerShell LoL (IWR) blocked'
             )
             verdict_reason = (
-                f"Payload detected via {level_label}. "
+                f"Detected via {level_label}. "
                 f"{block_reason or lol_detail}"
             )
         else:
