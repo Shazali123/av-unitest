@@ -198,9 +198,41 @@ def _simulate_click(phish_url, rid, timeout=10):
             tmp.write(body)
             tmp.close()
             print(f"[GoPhish]   -> Phishing page written to disk: {tmp.name}")
-            print(f"[GoPhish]   -> HTTP {resp.status} — page loaded "
-                  f"({len(body)} bytes). Phishing page NOT blocked.")
-            return True, resp.status, ""
+            print(f"[GoPhish]   -> HTTP {resp.status} — page loaded ({len(body)} bytes).")
+
+            # ── AV Quarantine Race-Condition Fix ──────────────────────────
+            # On-access AV scanners (Bitdefender, Defender, etc.) react to
+            # file creation events asynchronously — usually within 50–500ms.
+            # We poll every 100ms for up to 2s to see if the AV quarantines
+            # (deletes/moves) the file before we declare it "not blocked".
+            _POLL_INTERVAL = 0.1   # seconds between checks
+            _POLL_WINDOW   = 2.0   # total wait budget
+
+            quarantined   = False
+            deadline      = time.monotonic() + _POLL_WINDOW
+            elapsed_poll  = 0.0
+
+            print(f"[GoPhish]   -> Waiting up to {_POLL_WINDOW}s for AV to react to dropped file...")
+            while time.monotonic() < deadline:
+                if not os.path.exists(tmp.name):
+                    elapsed_poll = _POLL_WINDOW - (deadline - time.monotonic())
+                    quarantined  = True
+                    break
+                time.sleep(_POLL_INTERVAL)
+
+            if quarantined:
+                print(f"[GoPhish]   -> FILE QUARANTINED by AV "
+                      f"(disappeared within ~{elapsed_poll:.2f}s). DETECTED!")
+                return False, resp.status, "AV quarantined dropped payload"
+            else:
+                # AV didn't react — clean up the temp file ourselves
+                try:
+                    os.unlink(tmp.name)
+                except OSError:
+                    pass
+                print(f"[GoPhish]   -> File survived {_POLL_WINDOW}s poll window. "
+                      f"AV did NOT quarantine payload. NOT BLOCKED.")
+                return True, resp.status, ""
     except urllib.error.HTTPError as e:
         print(f"[GoPhish]   -> HTTP {e.code} from phishing server")
         return True, e.code, ""   # Got a response — not network-blocked
