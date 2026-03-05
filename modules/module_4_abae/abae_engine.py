@@ -1,32 +1,40 @@
 """
-ABAE Engine — Adaptive Behavioral Anomaly Engine (v2 — Sacrificial Lamb)
-========================================================================
-Architecture: Sacrificial Lamb / Process Isolation
+ABAE Engine — Adaptive Behavioral Anomaly Engine (v3 — PowerShell AMSI Handoff)
+================================================================================
+Architecture: Sacrificial Lamb + PowerShell AMSI Handoff
 
-The benchmark's main process (python.exe) is whitelisted by the AV.
-To force real detection, each behavioral test is run inside a SEPARATE
-child process spawned from a temporary directory.  The AV sees an unknown
-PID performing malicious-looking activity and terminates it.  The parent
-(this engine) watches the child's exit code + stdout sentinel and records
-the AV's kill action as a DETECTED result.
+Why PowerShell instead of Python:
+    python.exe is a globally trusted, digitally-signed binary. AVs give it a
+    "free pass" for behavioural heuristics to avoid breaking developer tools.
 
-Detection logic
----------------
-Each payload script prints "PAYLOAD_COMPLETE" as its very last line when
-it finishes without interference.  The parent checks:
+    PowerShell, however, is monitored by AMSI (Anti-Malware Scan Interface)
+    at TWO levels:
+        Level 1 — Script block: the entire .ps1 is scanned BEFORE execution
+        Level 2 — Runtime:      Invoke-Expression / dynamic strings scanned live
 
-  1. Sentinel "PAYLOAD_COMPLETE" present in stdout  → NOT DETECTED
-  2. Sentinel missing AND returncode != 0             → DETECTED (AV killed)
-  3. subprocess.TimeoutExpired                        → DETECTED (AV hung/suspended)
-  4. returncode == -1 (launch failure)               → DETECTED (AV blocked launch)
+The engine drops a .ps1 payload to %TEMP% then runs:
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -NonInteractive -File <path>
 
-Six behavioral tests (up from 5):
-  B-01  Ransomware File Churn          (500 files, .locked rename, ransom note)
-  B-02  Entropy Storm / XOR Cipher     (100×8 KB files, double XOR in-place)
-  B-03  Process Chain + WMIC Recon     (50 cmd.exe burst, 4-level chain, wmic)
-  B-04  Registry Persistence           (HKCU\\...\\Run key write + COM key)
-  B-05  LOLBIN Abuse                   (certutil, mshta, PS EncodedCommand, bitsadmin, regsvr32)
-  B-06  Multi-Vector Concurrent Storm  (all of the above on simultaneous threads)
+Both the python.exe "carrier" AND powershell.exe are separate PIDs. The AV
+sees an unrecognised .ps1 script performing malicious behaviour. Even if
+powershell.exe itself is trusted, AMSI hooks directly into the PS engine
+and can terminate the script mid-execution.
+
+Detection logic (same sentinel pattern):
+    Payload prints "PAYLOAD_COMPLETE" as its very last line.
+    Parent checks stdout:
+        Sentinel present, rc=0    → NOT DETECTED
+        Sentinel missing, rc≠0    → DETECTED (AV/AMSI killed the script)
+        TimeoutExpired            → DETECTED (AV suspended / hung the script)
+        Launch blocked            → DETECTED (AV blocked powershell.exe)
+
+Six behavioral tests:
+    B-01  Ransomware File Churn           (.ps1 — uses RNGCryptoServiceProvider)
+    B-02  Entropy Storm / XOR Cipher      (.ps1 — double-pass in-place cipher)
+    B-03  Process Chain + Invoke-Expr     (.ps1 — burst + IEX + WMIC)
+    B-04  Registry Persistence + Storm    (.ps1 — real Run key + COM + 20 churn)
+    B-05  LOLBIN + AMSI String Triggers   (.ps1 — certutil/mshta/PS-encoded/bitsadmin/regsvr32/Add-MpPreference)
+    B-06  Concurrent Runspace Storm       (.ps1 — 4 parallel runspaces: all vectors at once)
 """
 
 import os
@@ -36,7 +44,6 @@ import shutil
 import tempfile
 import subprocess
 from dataclasses import dataclass, field
-from typing import Optional
 
 SENTINEL = "PAYLOAD_COMPLETE"
 
@@ -66,55 +73,63 @@ def _payloads_dir() -> str:
 
 def _copy_payload_to_temp(payload_filename: str) -> str:
     """
-    Copy a payload script to a fresh sub-directory of %TEMP% so the spawned
-    python.exe runs from an un-whitelisted path the AV has never seen before.
-    Returns the full path to the copied script.
+    Copy a payload script (.ps1 or .py) to a unique %TEMP% subdirectory.
+    The spawned process runs from an un-whitelisted path the AV has never seen.
+    Returns the full path to the copied file.
     """
-    src = os.path.join(_payloads_dir(), payload_filename)
-    # Each run gets a unique temp dir — prevents any path caching by the AV
+    src      = os.path.join(_payloads_dir(), payload_filename)
     temp_dir = tempfile.mkdtemp(prefix="abae_run_")
-    dst = os.path.join(temp_dir, payload_filename)
+    dst      = os.path.join(temp_dir, payload_filename)
     shutil.copy2(src, dst)
     return dst
 
 
-def _run_sacrificial(
+# ---------------------------------------------------------------------------
+# Core launchers
+# ---------------------------------------------------------------------------
+
+def _run_ps1_sacrificial(
     tid: str,
     name: str,
-    payload_filename: str,
+    payload_ps1: str,
     extra_args: list = None,
     timeout: int = 30,
 ) -> BehaviorResult:
     """
-    Core sacrificial launcher.
+    PowerShell AMSI Handoff launcher.
 
-    1. Copies payload to %TEMP% sub-dir
-    2. Spawns it as a completely separate python.exe process
-    3. Waits up to `timeout` seconds
-    4. Checks sentinel + exit code to decide DETECTED / NOT DETECTED
+    1. Copies .ps1 payload to %TEMP%/<uuid>/
+    2. Spawns:  powershell.exe -NoProfile -ExecutionPolicy Bypass
+                               -NonInteractive -File <path> [args...]
+    3. Checks stdout for PAYLOAD_COMPLETE sentinel
+    4. Returns BehaviorResult with DETECTED=True if AV/AMSI intervened
     """
-    t0 = time.time()
-    payload_path = None
-    temp_dir     = None
-    detected     = False
-    detect_lat   = 0.0
-    detail       = ""
-    extra        = {"payload": payload_filename}
+    t0         = time.time()
+    temp_dir   = None
+    detected   = False
+    detect_lat = 0.0
+    detail     = ""
+    extra      = {"payload": payload_ps1, "mode": "powershell_amsi"}
 
     try:
-        payload_path = _copy_payload_to_temp(payload_filename)
-        temp_dir     = os.path.dirname(payload_path)
+        dst      = _copy_payload_to_temp(payload_ps1)
+        temp_dir = os.path.dirname(dst)
 
-        cmd = [sys.executable, payload_path] + (extra_args or [])
+        cmd = [
+            "powershell.exe",
+            "-NoProfile",
+            "-ExecutionPolicy", "Bypass",
+            "-NonInteractive",
+            "-File", dst,
+        ] + (extra_args or [])
 
-        print(f"[ABAE] {tid} Spawning sacrificial PID: {payload_filename} (from {temp_dir})")
+        print(f"[ABAE] {tid} Spawning PS1 payload via AMSI: {payload_ps1}")
 
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
             timeout=timeout,
-            # No CREATE_NO_WINDOW — we WANT the AV to see this as a visible process
         )
 
         stdout       = result.stdout or ""
@@ -123,52 +138,47 @@ def _run_sacrificial(
 
         extra["returncode"]  = returncode
         extra["sentinel_ok"] = sentinel_ok
-        extra["stderr_tail"] = (result.stderr or "")[-300:]  # last 300 chars
+        extra["stderr_tail"] = (result.stderr or "")[-300:]
 
         if sentinel_ok and returncode == 0:
-            # Child completed fully — AV did NOT intervene
             detected = False
-            detail   = f"Payload finished cleanly (sentinel present, rc=0). AV did not detect."
+            detail   = "PS1 payload completed — sentinel present, rc=0. AMSI did not block."
         elif not sentinel_ok and returncode != 0:
-            # Most likely kill: no sentinel + non-zero exit
             detected   = True
             detect_lat = round(time.time() - t0, 3)
-            detail     = (f"AV likely terminated child process. "
-                          f"Sentinel absent, returncode={returncode}.")
+            detail     = (f"AMSI/AV terminated PowerShell script. "
+                          f"Sentinel absent, returncode={returncode}. "
+                          f"Stderr: {extra['stderr_tail'][:150]}")
         elif not sentinel_ok and returncode == 0:
-            # Unusual: clean exit but no sentinel — payload crashed internally
+            # Script exited clean but never printed sentinel → PS error mid-script
             detected = False
-            detail   = f"Payload exited 0 but sentinel missing — internal crash, not AV kill."
+            detail   = "PS1 exited 0 but sentinel missing — internal PS error, not AMSI kill."
             extra["warning"] = "no_sentinel_rc0"
         else:
-            # sentinel present but rc != 0 — payload printed sentinel then AV killed on exit
+            # Sentinel present but rc != 0 — AMSI may have logged and killed on exit
             detected   = True
             detect_lat = round(time.time() - t0, 3)
-            detail     = f"AV may have intervened on exit. Sentinel present but rc={returncode}."
+            detail     = f"AMSI intervention suspected on exit. Sentinel present but rc={returncode}."
 
     except subprocess.TimeoutExpired:
-        # AV suspended the process — it never returned
         detected   = True
         detect_lat = round(time.time() - t0, 3)
-        detail     = f"AV suspended/hung child process — TimeoutExpired after {timeout}s."
+        detail     = f"AMSI/AV suspended PowerShell script — TimeoutExpired after {timeout}s."
         extra["timeout"] = timeout
 
     except (FileNotFoundError, PermissionError, OSError) as e:
-        # AV blocked the python.exe launch itself
         detected   = True
         detect_lat = round(time.time() - t0, 3)
-        detail     = f"AV blocked child process launch: {e}"
+        detail     = f"AV blocked powershell.exe launch: {e}"
         extra["launch_error"] = str(e)
 
     except Exception as e:
-        # Unexpected failure
         detected   = True
         detect_lat = round(time.time() - t0, 3)
-        detail     = f"Unexpected exception during sacrificial run: {e}"
+        detail     = f"Unexpected exception during PS1 run: {e}"
         extra["exception"] = str(e)
 
     finally:
-        # Always clean up the temp dir regardless of outcome
         if temp_dir and os.path.exists(temp_dir):
             shutil.rmtree(temp_dir, ignore_errors=True)
 
@@ -183,104 +193,156 @@ def _run_sacrificial(
     )
 
 
+def _run_py_sacrificial(
+    tid: str,
+    name: str,
+    payload_py: str,
+    extra_args: list = None,
+    timeout: int = 30,
+) -> BehaviorResult:
+    """
+    Fallback Python sacrificial launcher (kept for reference / non-AMSI tests).
+    Copies .py payload to %TEMP% and spawns via sys.executable.
+    """
+    t0         = time.time()
+    temp_dir   = None
+    detected   = False
+    detect_lat = 0.0
+    detail     = ""
+    extra      = {"payload": payload_py, "mode": "python_sacrificial"}
+
+    try:
+        dst      = _copy_payload_to_temp(payload_py)
+        temp_dir = os.path.dirname(dst)
+        cmd      = [sys.executable, dst] + (extra_args or [])
+
+        print(f"[ABAE] {tid} Spawning Python payload from TEMP: {payload_py}")
+
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=timeout,
+        )
+
+        stdout      = result.stdout or ""
+        returncode  = result.returncode
+        sentinel_ok = SENTINEL in stdout
+
+        extra["returncode"]  = returncode
+        extra["sentinel_ok"] = sentinel_ok
+        extra["stderr_tail"] = (result.stderr or "")[-300:]
+
+        if sentinel_ok and returncode == 0:
+            detected = False
+            detail   = "Python payload completed cleanly — AV did not detect."
+        elif not sentinel_ok and returncode != 0:
+            detected   = True
+            detect_lat = round(time.time() - t0, 3)
+            detail     = f"AV terminated Python child. Sentinel absent, rc={returncode}."
+        elif not sentinel_ok and returncode == 0:
+            detected = False
+            detail   = "Python child exited 0 but no sentinel — internal crash."
+            extra["warning"] = "no_sentinel_rc0"
+        else:
+            detected   = True
+            detect_lat = round(time.time() - t0, 3)
+            detail     = f"AV intervention suspected. Sentinel present but rc={returncode}."
+
+    except subprocess.TimeoutExpired:
+        detected   = True
+        detect_lat = round(time.time() - t0, 3)
+        detail     = f"AV suspended Python child — TimeoutExpired after {timeout}s."
+        extra["timeout"] = timeout
+
+    except (FileNotFoundError, PermissionError, OSError) as e:
+        detected   = True
+        detect_lat = round(time.time() - t0, 3)
+        detail     = f"AV blocked Python child launch: {e}"
+        extra["launch_error"] = str(e)
+
+    except Exception as e:
+        detected   = True
+        detect_lat = round(time.time() - t0, 3)
+        detail     = f"Unexpected exception: {e}"
+        extra["exception"] = str(e)
+
+    finally:
+        if temp_dir and os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+    return BehaviorResult(
+        tid=tid, name=name, detected=detected,
+        detection_latency=detect_lat, detail=detail,
+        elapsed=round(time.time() - t0, 2), extra=extra,
+    )
+
+
 # ---------------------------------------------------------------------------
-# Individual sacrificial test wrappers
+# Individual test wrappers — PS1 primary, Python fallback
 # ---------------------------------------------------------------------------
 
 def _b01_ransomware_churn(cfg: dict) -> BehaviorResult:
-    """
-    B-01 — Ransomware File Churn
-    Sacrificial child: creates 500 files, overwrites with urandom, renames
-    to .locked, drops and deletes a RECOVERY_KEY.txt decoy.
-    """
-    count = cfg.get("file_manipulation_count", 500)
-    return _run_sacrificial(
-        tid="B-01",
-        name="Ransomware File Churn",
-        payload_filename="abae_payload_b01.py",
-        extra_args=[str(count)],
+    """B-01 Ransomware File Churn — PS1 via AMSI (RNGCrypto + .locked rename + ransom note)"""
+    return _run_ps1_sacrificial(
+        tid="B-01", name="Ransomware File Churn (AMSI)",
+        payload_ps1="abae_payload_b01.ps1",
+        extra_args=["-FileCount", str(cfg.get("file_manipulation_count", 500))],
         timeout=cfg.get("test_timeout_s", 30),
     )
 
 
 def _b02_entropy_storm(cfg: dict) -> BehaviorResult:
-    """
-    B-02 — Entropy Storm / XOR Cipher
-    Sacrificial child: writes 100×8 KB files then XOR-encrypts them in-place
-    twice to simulate a double-cipher encryption loop.
-    """
-    file_count = cfg.get("entropy_file_count", 100)
-    file_bytes = cfg.get("entropy_file_size_kb", 8) * 1024
-    return _run_sacrificial(
-        tid="B-02",
-        name="Entropy Storm (XOR Cipher)",
-        payload_filename="abae_payload_b02.py",
-        extra_args=[str(file_count), str(file_bytes)],
+    """B-02 Entropy Storm / XOR Cipher — PS1 via AMSI (double-pass in-place cipher)"""
+    return _run_ps1_sacrificial(
+        tid="B-02", name="Entropy Storm / XOR Cipher (AMSI)",
+        payload_ps1="abae_payload_b02.ps1",
+        extra_args=[
+            "-FileCount", str(cfg.get("entropy_file_count", 100)),
+            "-FileSizeKB", str(cfg.get("entropy_file_size_kb", 8)),
+        ],
         timeout=cfg.get("test_timeout_s", 30),
     )
 
 
 def _b03_process_chain(cfg: dict) -> BehaviorResult:
-    """
-    B-03 — Rapid Process Chain + WMIC Recon
-    Sacrificial child: spawns 50 cmd.exe processes in rapid fire, each running
-    recon LOLBINs; then executes a 4-level deep process chain + wmic enumeration.
-    """
-    burst    = cfg.get("process_burst_count", 50)
-    interval = cfg.get("process_burst_interval_s", 0.02)
-    return _run_sacrificial(
-        tid="B-03",
-        name="Process Chain + WMIC Recon",
-        payload_filename="abae_payload_b03.py",
-        extra_args=[str(burst), str(interval)],
+    """B-03 Process Chain + Invoke-Expression — PS1 via AMSI (burst + IEX + WMIC)"""
+    return _run_ps1_sacrificial(
+        tid="B-03", name="Process Chain + Invoke-Expression (AMSI)",
+        payload_ps1="abae_payload_b03.ps1",
+        extra_args=[
+            "-BurstCount", str(cfg.get("process_burst_count", 50)),
+            "-IntervalMs",  str(int(cfg.get("process_burst_interval_s", 0.02) * 1000)),
+        ],
         timeout=cfg.get("test_timeout_s", 30),
     )
 
 
 def _b04_registry_persistence(cfg: dict) -> BehaviorResult:
-    """
-    B-04 — Registry Persistence Simulation
-    Sacrificial child: writes to HKCU\\...\\CurrentVersion\\Run (the real startup
-    persistence key) and a fake COM class key, then self-cleans.
-    """
-    return _run_sacrificial(
-        tid="B-04",
-        name="Registry Persistence Simulation",
-        payload_filename="abae_payload_b04.py",
+    """B-04 Registry Persistence — PS1 via AMSI (real Run key + COM + registry storm)"""
+    return _run_ps1_sacrificial(
+        tid="B-04", name="Registry Persistence + Storm (AMSI)",
+        payload_ps1="abae_payload_b04.ps1",
         timeout=cfg.get("test_timeout_s", 30),
     )
 
 
-def _b05_lolbin_abuse(cfg: dict) -> BehaviorResult:
-    """
-    B-05 — Living off the Land (LOLBIN) Abuse
-    Sacrificial child chains: certutil encode/decode, mshta VBScript,
-    PowerShell EncodedCommand, bitsadmin transfer, regsvr32 Squiblydoo.
-    """
+def _b05_lolbin_amsi(cfg: dict) -> BehaviorResult:
+    """B-05 LOLBIN + AMSI String Triggers — certutil/mshta/IEX/bitsadmin/regsvr32/Add-MpPreference"""
     if not cfg.get("lolbin_enabled", True):
         return BehaviorResult(
-            tid="B-05", name="LOLBIN Abuse (disabled)",
+            tid="B-05", name="LOLBIN + AMSI Strings (disabled)",
             detail="Skipped — lolbin_enabled=false in config."
         )
-    return _run_sacrificial(
-        tid="B-05",
-        name="LOLBIN Abuse",
-        payload_filename="abae_payload_b05.py",
+    return _run_ps1_sacrificial(
+        tid="B-05", name="LOLBIN + AMSI String Triggers",
+        payload_ps1="abae_payload_b05.ps1",
         timeout=cfg.get("test_timeout_s", 30),
     )
 
 
-def _b06_multivector_storm(cfg: dict) -> BehaviorResult:
-    """
-    B-06 — Multi-Vector Concurrent Storm
-    Sacrificial child runs file storm + process burst + entropy cipher +
-    registry churn ALL simultaneously on separate threads.  The concurrent
-    multi-vector pattern is the strongest zero-day heuristic signal.
-    """
-    return _run_sacrificial(
-        tid="B-06",
-        name="Multi-Vector Concurrent Storm",
-        payload_filename="abae_payload_b06.py",
+def _b06_concurrent_storm(cfg: dict) -> BehaviorResult:
+    """B-06 Concurrent Runspace Storm — all vectors simultaneously via PS runspaces"""
+    return _run_ps1_sacrificial(
+        tid="B-06", name="Concurrent Runspace Storm (AMSI)",
+        payload_ps1="abae_payload_b06.ps1",
         timeout=cfg.get("test_timeout_s", 60),  # storm needs more time
     )
 
@@ -291,7 +353,7 @@ def _b06_multivector_storm(cfg: dict) -> BehaviorResult:
 
 class ABAEEngine:
     """
-    Orchestrates all 6 sacrificial behavioral tests.
+    Orchestrates all 6 PowerShell AMSI behavioral tests.
     Call run_all() → list[BehaviorResult].
     """
 
@@ -299,21 +361,21 @@ class ABAEEngine:
         self.cfg = cfg
 
     def run_all(self) -> list:
-        """Launch all 6 sacrificial tests sequentially; return list[BehaviorResult]."""
+        """Launch all 6 PS1 sacrificial tests sequentially; return list[BehaviorResult]."""
 
-        print("[ABAE] ============================================")
-        print("[ABAE]  Sacrificial Lamb Process Isolation Mode")
-        print("[ABAE]  Each test runs in a separate child PID")
-        print("[ABAE]  AV kills child → parent records DETECTED")
-        print("[ABAE] ============================================")
+        print("[ABAE] ============================================================")
+        print("[ABAE]  Sacrificial Lamb + PowerShell AMSI Handoff Mode")
+        print("[ABAE]  Each test drops a .ps1 to %TEMP% and runs via PS engine")
+        print("[ABAE]  AMSI intercepts behavioural patterns at the script level")
+        print("[ABAE] ============================================================")
 
         tests = [
-            ("B-01", "Ransomware File Churn",          _b01_ransomware_churn),
-            ("B-02", "Entropy Storm (XOR Cipher)",     _b02_entropy_storm),
-            ("B-03", "Process Chain + WMIC Recon",     _b03_process_chain),
-            ("B-04", "Registry Persistence",           _b04_registry_persistence),
-            ("B-05", "LOLBIN Abuse",                   _b05_lolbin_abuse),
-            ("B-06", "Multi-Vector Concurrent Storm",  _b06_multivector_storm),
+            ("B-01", "Ransomware File Churn (AMSI)",         _b01_ransomware_churn),
+            ("B-02", "Entropy Storm / XOR Cipher (AMSI)",    _b02_entropy_storm),
+            ("B-03", "Process Chain + Invoke-Expr (AMSI)",   _b03_process_chain),
+            ("B-04", "Registry Persistence (AMSI)",          _b04_registry_persistence),
+            ("B-05", "LOLBIN + AMSI String Triggers",        _b05_lolbin_amsi),
+            ("B-06", "Concurrent Runspace Storm (AMSI)",     _b06_concurrent_storm),
         ]
 
         results = []
@@ -328,8 +390,7 @@ class ABAEEngine:
                     elapsed=0.0,
                 )
             verdict = "DETECTED" if result.detected else "NOT DETECTED"
-            latency = (f"  latency={result.detection_latency}s"
-                       if result.detected else "")
+            latency = f"  latency={result.detection_latency}s" if result.detected else ""
             print(f"[ABAE]   -> [{verdict}]  {result.elapsed}s{latency}  — {result.detail}")
             results.append(result)
 
