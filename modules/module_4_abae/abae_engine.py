@@ -1,409 +1,287 @@
 """
-ABAE Engine — Adaptive Behavioral Anomaly Engine
-=================================================
-All behavioral test logic lives here.
+ABAE Engine — Adaptive Behavioral Anomaly Engine (v2 — Sacrificial Lamb)
+========================================================================
+Architecture: Sacrificial Lamb / Process Isolation
 
-Architecture
-------------
-BehaviorResult  dataclass  — output of one test run
-ABAEEngine      class      — owns the sandbox, runs all 5 tests,
-                             returns list[BehaviorResult]
+The benchmark's main process (python.exe) is whitelisted by the AV.
+To force real detection, each behavioral test is run inside a SEPARATE
+child process spawned from a temporary directory.  The AV sees an unknown
+PID performing malicious-looking activity and terminates it.  The parent
+(this engine) watches the child's exit code + stdout sentinel and records
+the AV's kill action as a DETECTED result.
 
-Detection philosophy
---------------------
-We never call AV APIs.  We observe OS-level side-effects of AV
-intervention:
-    - PermissionError / OSError on a file write   → AV locked the file
-    - WindowsError on a registry write             → registry monitor blocked it
-    - Subprocess exit code / launch failure        → AV killed the child process
-    - File missing / zero-bytes after write        → real-time scanner quarantined it
+Detection logic
+---------------
+Each payload script prints "PAYLOAD_COMPLETE" as its very last line when
+it finishes without interference.  The parent checks:
 
-All tests run inside a throw-away sandbox directory (BME_TEST/) that is
-wiped in a finally block even if the AV terminates the parent process.
+  1. Sentinel "PAYLOAD_COMPLETE" present in stdout  → NOT DETECTED
+  2. Sentinel missing AND returncode != 0             → DETECTED (AV killed)
+  3. subprocess.TimeoutExpired                        → DETECTED (AV hung/suspended)
+  4. returncode == -1 (launch failure)               → DETECTED (AV blocked launch)
+
+Six behavioral tests (up from 5):
+  B-01  Ransomware File Churn          (500 files, .locked rename, ransom note)
+  B-02  Entropy Storm / XOR Cipher     (100×8 KB files, double XOR in-place)
+  B-03  Process Chain + WMIC Recon     (50 cmd.exe burst, 4-level chain, wmic)
+  B-04  Registry Persistence           (HKCU\\...\\Run key write + COM key)
+  B-05  LOLBIN Abuse                   (certutil, mshta, PS EncodedCommand, bitsadmin, regsvr32)
+  B-06  Multi-Vector Concurrent Storm  (all of the above on simultaneous threads)
 """
 
 import os
 import sys
 import time
-import math
-import winreg
-import random
-import string
+import shutil
 import tempfile
 import subprocess
-import threading
-import shutil
-import json
 from dataclasses import dataclass, field
 from typing import Optional
 
+SENTINEL = "PAYLOAD_COMPLETE"
 
 # ---------------------------------------------------------------------------
-# Result container
+# Result container (unchanged — compatible with module.py / results_handler)
 # ---------------------------------------------------------------------------
 
 @dataclass
 class BehaviorResult:
-    tid:               str            # e.g. "B-01"
+    tid:               str
     name:              str
     detected:          bool  = False
-    detection_latency: float = 0.0   # seconds from test start to first block
+    detection_latency: float = 0.0
     detail:            str   = ""
     elapsed:           float = 0.0
-    extra:             dict  = field(default_factory=dict)  # test-specific metrics
+    extra:             dict  = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _shannon_entropy(data: bytes) -> float:
-    """Calculate Shannon entropy (bits per byte) of a byte sequence."""
-    if not data:
-        return 0.0
-    freq = {}
-    for b in data:
-        freq[b] = freq.get(b, 0) + 1
-    n = len(data)
-    return -sum((c / n) * math.log2(c / n) for c in freq.values())
+def _payloads_dir() -> str:
+    """Absolute path to the abae_payloads/ folder next to this file."""
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "abae_payloads")
 
 
-def _random_str(length: int) -> str:
-    return ''.join(random.choices(string.ascii_lowercase, k=length))
-
-
-def _run_proc(args, timeout=10):
-    """Run subprocess; return (rc, stdout, stderr). rc=-1 means launch failed."""
-    try:
-        p = subprocess.run(
-            args,
-            capture_output=True, text=True, timeout=timeout,
-            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
-        )
-        return p.returncode, p.stdout, p.stderr
-    except subprocess.TimeoutExpired:
-        return -2, "", "TIMEOUT"
-    except (FileNotFoundError, PermissionError, OSError) as e:
-        return -1, "", str(e)
-    except Exception as e:
-        return -1, "", str(e)
-
-
-# ---------------------------------------------------------------------------
-# Individual behavioral tests
-# ---------------------------------------------------------------------------
-
-def _b01_file_manipulation(sandbox: str, cfg: dict) -> BehaviorResult:
+def _copy_payload_to_temp(payload_filename: str) -> str:
     """
-    B-01 — Rapid File System Manipulation
-    Creates N dummy files then rapidly overwrites / renames / touch-modifies
-    them to simulate ransomware-like churning behaviour.
+    Copy a payload script to a fresh sub-directory of %TEMP% so the spawned
+    python.exe runs from an un-whitelisted path the AV has never seen before.
+    Returns the full path to the copied script.
     """
-    tid, name = "B-01", "Rapid File Manipulation"
-    t0         = time.time()
-    test_dir   = os.path.join(sandbox, "b01_files")
-    os.makedirs(test_dir, exist_ok=True)
+    src = os.path.join(_payloads_dir(), payload_filename)
+    # Each run gets a unique temp dir — prevents any path caching by the AV
+    temp_dir = tempfile.mkdtemp(prefix="abae_run_")
+    dst = os.path.join(temp_dir, payload_filename)
+    shutil.copy2(src, dst)
+    return dst
 
-    n            = cfg.get("file_manipulation_count", 300)
-    files_done   = 0
+
+def _run_sacrificial(
+    tid: str,
+    name: str,
+    payload_filename: str,
+    extra_args: list = None,
+    timeout: int = 30,
+) -> BehaviorResult:
+    """
+    Core sacrificial launcher.
+
+    1. Copies payload to %TEMP% sub-dir
+    2. Spawns it as a completely separate python.exe process
+    3. Waits up to `timeout` seconds
+    4. Checks sentinel + exit code to decide DETECTED / NOT DETECTED
+    """
+    t0 = time.time()
+    payload_path = None
+    temp_dir     = None
     detected     = False
-    detail       = ""
     detect_lat   = 0.0
+    detail       = ""
+    extra        = {"payload": payload_filename}
 
     try:
-        # Phase 1: create files
-        paths = []
-        for i in range(n):
-            p = os.path.join(test_dir, f"bm_{i:04d}.tmp")
-            with open(p, "w") as f:
-                f.write(_random_str(64))
-            paths.append(p)
+        payload_path = _copy_payload_to_temp(payload_filename)
+        temp_dir     = os.path.dirname(payload_path)
 
-        # Phase 2: rapid overwrite with random content
-        for i, p in enumerate(paths):
-            try:
-                with open(p, "wb") as f:
-                    f.write(os.urandom(128))
-                files_done += 1
-            except (PermissionError, OSError) as e:
-                detected    = True
-                detect_lat  = time.time() - t0
-                detail      = f"Write blocked at file {i} by OS/AV: {e}"
-                break
+        cmd = [sys.executable, payload_path] + (extra_args or [])
 
-        if not detected:
-            # Phase 3: rename with random extension (mimics ransomware extension swap)
-            for i, p in enumerate(paths):
-                try:
-                    new_p = p + ".rnd"
-                    os.rename(p, new_p)
-                    files_done += 1
-                except (PermissionError, OSError) as e:
-                    detected   = True
-                    detect_lat = time.time() - t0
-                    detail     = f"Rename blocked at file {i} by OS/AV: {e}"
-                    break
+        print(f"[ABAE] {tid} Spawning sacrificial PID: {payload_filename} (from {temp_dir})")
 
-        if not detected:
-            detail = f"All {n} files written and renamed without AV block"
-
-    except (PermissionError, OSError) as e:
-        detected   = True
-        detect_lat = time.time() - t0
-        detail     = f"Directory/file operation blocked: {e}"
-    finally:
-        shutil.rmtree(test_dir, ignore_errors=True)
-
-    return BehaviorResult(
-        tid=tid, name=name, detected=detected,
-        detection_latency=round(detect_lat, 3),
-        detail=detail,
-        elapsed=round(time.time() - t0, 2),
-        extra={"files_modified_before_detection": files_done},
-    )
-
-
-def _b02_entropy_spike(sandbox: str, cfg: dict) -> BehaviorResult:
-    """
-    B-02 — Entropy Spike Simulation
-    Writes high-entropy (os.urandom) data into N files and computes the
-    Shannon entropy delta to confirm the spike, then checks if AV blocked.
-    """
-    tid, name = "B-02", "Entropy Spike Simulation"
-    t0        = time.time()
-    test_dir  = os.path.join(sandbox, "b02_entropy")
-    os.makedirs(test_dir, exist_ok=True)
-
-    n           = cfg.get("entropy_file_count", 50)
-    threshold   = cfg.get("entropy_high_threshold", 7.5)
-    detected    = False
-    detect_lat  = 0.0
-    detail      = ""
-    avg_entropy = 0.0
-    files_done  = 0
-
-    try:
-        entropies = []
-        for i in range(n):
-            p = os.path.join(test_dir, f"ent_{i:03d}.bin")
-            raw = os.urandom(4096)   # truly random → max entropy
-            try:
-                with open(p, "wb") as f:
-                    f.write(raw)
-                entropies.append(_shannon_entropy(raw))
-                files_done += 1
-            except (PermissionError, OSError) as e:
-                detected   = True
-                detect_lat = time.time() - t0
-                detail     = f"High-entropy write blocked at file {i}: {e}"
-                break
-
-        if entropies:
-            avg_entropy = round(sum(entropies) / len(entropies), 4)
-
-        if not detected:
-            if avg_entropy >= threshold:
-                # Files were written — AV did NOT block the entropy spike
-                detail = (f"Avg entropy {avg_entropy} bits/byte (≥ {threshold} threshold). "
-                          f"AV did not block high-entropy writes.")
-            else:
-                detail = f"Avg entropy {avg_entropy} bits/byte — below threshold."
-
-    except (PermissionError, OSError) as e:
-        detected   = True
-        detect_lat = time.time() - t0
-        detail     = f"Entropy test blocked at OS level: {e}"
-    finally:
-        shutil.rmtree(test_dir, ignore_errors=True)
-
-    return BehaviorResult(
-        tid=tid, name=name, detected=detected,
-        detection_latency=round(detect_lat, 3),
-        detail=detail,
-        elapsed=round(time.time() - t0, 2),
-        extra={"avg_entropy_bits": avg_entropy,
-               "files_written": files_done,
-               "entropy_threshold": threshold},
-    )
-
-
-def _b03_process_burst(sandbox: str, cfg: dict) -> BehaviorResult:
-    """
-    B-03 — Suspicious Process Burst Activity
-    Spawns multiple rapid short-lived subprocesses then performs a
-    high-frequency file-open/close burst — mimics malicious execution chains.
-    """
-    tid, name = "B-03", "Process Burst Activity"
-    t0        = time.time()
-    test_dir  = os.path.join(sandbox, "b03_burst")
-    os.makedirs(test_dir, exist_ok=True)
-
-    n_proc     = cfg.get("process_burst_count", 20)
-    interval   = cfg.get("process_burst_interval_s", 0.04)
-    n_ops      = cfg.get("file_burst_ops", 1000)
-    detected   = False
-    detect_lat = 0.0
-    procs_done = 0
-    detail     = ""
-
-    try:
-        # Phase 1: rapid subprocess spawning
-        for i in range(n_proc):
-            rc, _, stderr = _run_proc(
-                ["cmd", "/c", f"echo ABAE_BURST_{i}"], timeout=5
-            )
-            if rc == -1:
-                detected   = True
-                detect_lat = time.time() - t0
-                detail     = f"Process spawn blocked at iteration {i}: {stderr}"
-                break
-            procs_done += 1
-            time.sleep(interval)
-
-        if not detected:
-            # Phase 2: high-frequency file open/close (I/O storm)
-            burst_file = os.path.join(test_dir, "burst_io.tmp")
-            for i in range(n_ops):
-                try:
-                    with open(burst_file, "w") as f:
-                        f.write(str(i))
-                except (PermissionError, OSError) as e:
-                    detected   = True
-                    detect_lat = time.time() - t0
-                    detail     = f"File I/O burst blocked at op {i}: {e}"
-                    break
-
-        if not detected:
-            detail = (f"{procs_done}/{n_proc} processes spawned, "
-                      f"{n_ops} file I/O ops completed without AV block.")
-
-    except (PermissionError, OSError) as e:
-        detected   = True
-        detect_lat = time.time() - t0
-        detail     = f"Burst activity blocked: {e}"
-    finally:
-        shutil.rmtree(test_dir, ignore_errors=True)
-
-    return BehaviorResult(
-        tid=tid, name=name, detected=detected,
-        detection_latency=round(detect_lat, 3),
-        detail=detail,
-        elapsed=round(time.time() - t0, 2),
-        extra={"processes_spawned": procs_done,
-               "processes_target": n_proc},
-    )
-
-
-def _b04_registry_modification(cfg: dict) -> BehaviorResult:
-    """
-    B-04 — Registry Modification Attempt (non-destructive)
-    Writes a benign test value to HKCU\\Software\\ABAE_BenchmarkTest,
-    reads it back to verify, then deletes it.
-    Operates entirely in user-space (HKCU) — no admin rights needed.
-    """
-    tid, name  = "B-04", "Registry Modification Attempt"
-    t0         = time.time()
-    key_path   = r"Software\ABAE_BenchmarkTest"
-    val_name   = "abae_test_marker"
-    val_data   = f"ABAE_RUN_{int(t0)}"
-    detected   = False
-    detect_lat = 0.0
-    detail     = ""
-    reg_ok     = False
-
-    try:
-        # Create / open key
-        key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
-        # Write value
-        winreg.SetValueEx(key, val_name, 0, winreg.REG_SZ, val_data)
-        # Read back
-        read_val, _ = winreg.QueryValueEx(key, val_name)
-        reg_ok = (read_val == val_data)
-        winreg.DeleteValue(key, val_name)
-        winreg.CloseKey(key)
-        # Delete the key itself
-        winreg.DeleteKey(winreg.HKEY_CURRENT_USER, key_path)
-
-        if reg_ok:
-            detail = "Registry write/read/delete completed — AV registry monitor did not intervene."
-        else:
-            detected   = True
-            detect_lat = time.time() - t0
-            detail     = "Registry value read-back mismatch — possible AV redirection/block."
-
-    except (PermissionError, OSError) as e:
-        detected   = True
-        detect_lat = time.time() - t0
-        detail     = f"Registry operation blocked by OS/AV: {e}"
-    except Exception as e:
-        detected   = True
-        detect_lat = time.time() - t0
-        detail     = f"Registry operation raised unexpected exception: {e}"
-
-    return BehaviorResult(
-        tid=tid, name=name, detected=detected,
-        detection_latency=round(detect_lat, 3),
-        detail=detail,
-        elapsed=round(time.time() - t0, 2),
-        extra={"registry_op_success": reg_ok},
-    )
-
-
-def _b05_behavioral_consistency(sandbox: str, cfg: dict) -> BehaviorResult:
-    """
-    B-05 — Behavioral Consistency
-    Re-runs B-01, B-02, and B-03 three times with slight parameter
-    variations (±10% file count, different random seed).
-    Purpose: detect whether AV learns/adapts or only reacts on first exposure.
-    """
-    tid, name  = "B-05", "Behavioral Consistency"
-    t0         = time.time()
-    runs       = cfg.get("behavioral_consistency_runs", 3)
-    base_files = cfg.get("file_manipulation_count", 300)
-    base_ent   = cfg.get("entropy_file_count", 50)
-
-    run_detections = []
-    detail_parts   = []
-
-    for run_idx in range(runs):
-        # Vary parameters slightly each run
-        variation   = 1.0 + random.uniform(-0.10, 0.10)
-        run_cfg     = dict(cfg)
-        run_cfg["file_manipulation_count"] = max(10, int(base_files * variation))
-        run_cfg["entropy_file_count"]      = max(5,  int(base_ent   * variation))
-        # Reduce burst to keep the sub-test fast
-        run_cfg["process_burst_count"] = 5
-        run_cfg["file_burst_ops"]      = 100
-
-        run_sandbox = os.path.join(sandbox, f"b05_run{run_idx}")
-        os.makedirs(run_sandbox, exist_ok=True)
-
-        r1 = _b01_file_manipulation(run_sandbox, run_cfg)
-        r2 = _b02_entropy_spike(run_sandbox, run_cfg)
-        r3 = _b03_process_burst(run_sandbox, run_cfg)
-
-        run_det = any([r1.detected, r2.detected, r3.detected])
-        run_detections.append(run_det)
-        detail_parts.append(
-            f"Run {run_idx+1}: B01={'D' if r1.detected else 'N'}"
-            f" B02={'D' if r2.detected else 'N'}"
-            f" B03={'D' if r3.detected else 'N'}"
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            # No CREATE_NO_WINDOW — we WANT the AV to see this as a visible process
         )
-        shutil.rmtree(run_sandbox, ignore_errors=True)
 
-    n_det             = sum(1 for d in run_detections if d)
-    consistency_score = f"{n_det}/{runs}"
-    # Detected if AV was consistent across ALL runs (or majority)
-    detected = n_det >= (runs // 2 + 1)
+        stdout       = result.stdout or ""
+        returncode   = result.returncode
+        sentinel_ok  = SENTINEL in stdout
+
+        extra["returncode"]  = returncode
+        extra["sentinel_ok"] = sentinel_ok
+        extra["stderr_tail"] = (result.stderr or "")[-300:]  # last 300 chars
+
+        if sentinel_ok and returncode == 0:
+            # Child completed fully — AV did NOT intervene
+            detected = False
+            detail   = f"Payload finished cleanly (sentinel present, rc=0). AV did not detect."
+        elif not sentinel_ok and returncode != 0:
+            # Most likely kill: no sentinel + non-zero exit
+            detected   = True
+            detect_lat = round(time.time() - t0, 3)
+            detail     = (f"AV likely terminated child process. "
+                          f"Sentinel absent, returncode={returncode}.")
+        elif not sentinel_ok and returncode == 0:
+            # Unusual: clean exit but no sentinel — payload crashed internally
+            detected = False
+            detail   = f"Payload exited 0 but sentinel missing — internal crash, not AV kill."
+            extra["warning"] = "no_sentinel_rc0"
+        else:
+            # sentinel present but rc != 0 — payload printed sentinel then AV killed on exit
+            detected   = True
+            detect_lat = round(time.time() - t0, 3)
+            detail     = f"AV may have intervened on exit. Sentinel present but rc={returncode}."
+
+    except subprocess.TimeoutExpired:
+        # AV suspended the process — it never returned
+        detected   = True
+        detect_lat = round(time.time() - t0, 3)
+        detail     = f"AV suspended/hung child process — TimeoutExpired after {timeout}s."
+        extra["timeout"] = timeout
+
+    except (FileNotFoundError, PermissionError, OSError) as e:
+        # AV blocked the python.exe launch itself
+        detected   = True
+        detect_lat = round(time.time() - t0, 3)
+        detail     = f"AV blocked child process launch: {e}"
+        extra["launch_error"] = str(e)
+
+    except Exception as e:
+        # Unexpected failure
+        detected   = True
+        detect_lat = round(time.time() - t0, 3)
+        detail     = f"Unexpected exception during sacrificial run: {e}"
+        extra["exception"] = str(e)
+
+    finally:
+        # Always clean up the temp dir regardless of outcome
+        if temp_dir and os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
     return BehaviorResult(
-        tid=tid, name=name, detected=detected,
-        detection_latency=0.0,
-        detail=f"Consistency: {consistency_score}. " + "  |  ".join(detail_parts),
+        tid=tid,
+        name=name,
+        detected=detected,
+        detection_latency=detect_lat,
+        detail=detail,
         elapsed=round(time.time() - t0, 2),
-        extra={"consistency_rate": consistency_score,
-               "runs": runs,
-               "detections_per_run": run_detections},
+        extra=extra,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Individual sacrificial test wrappers
+# ---------------------------------------------------------------------------
+
+def _b01_ransomware_churn(cfg: dict) -> BehaviorResult:
+    """
+    B-01 — Ransomware File Churn
+    Sacrificial child: creates 500 files, overwrites with urandom, renames
+    to .locked, drops and deletes a RECOVERY_KEY.txt decoy.
+    """
+    count = cfg.get("file_manipulation_count", 500)
+    return _run_sacrificial(
+        tid="B-01",
+        name="Ransomware File Churn",
+        payload_filename="abae_payload_b01.py",
+        extra_args=[str(count)],
+        timeout=cfg.get("test_timeout_s", 30),
+    )
+
+
+def _b02_entropy_storm(cfg: dict) -> BehaviorResult:
+    """
+    B-02 — Entropy Storm / XOR Cipher
+    Sacrificial child: writes 100×8 KB files then XOR-encrypts them in-place
+    twice to simulate a double-cipher encryption loop.
+    """
+    file_count = cfg.get("entropy_file_count", 100)
+    file_bytes = cfg.get("entropy_file_size_kb", 8) * 1024
+    return _run_sacrificial(
+        tid="B-02",
+        name="Entropy Storm (XOR Cipher)",
+        payload_filename="abae_payload_b02.py",
+        extra_args=[str(file_count), str(file_bytes)],
+        timeout=cfg.get("test_timeout_s", 30),
+    )
+
+
+def _b03_process_chain(cfg: dict) -> BehaviorResult:
+    """
+    B-03 — Rapid Process Chain + WMIC Recon
+    Sacrificial child: spawns 50 cmd.exe processes in rapid fire, each running
+    recon LOLBINs; then executes a 4-level deep process chain + wmic enumeration.
+    """
+    burst    = cfg.get("process_burst_count", 50)
+    interval = cfg.get("process_burst_interval_s", 0.02)
+    return _run_sacrificial(
+        tid="B-03",
+        name="Process Chain + WMIC Recon",
+        payload_filename="abae_payload_b03.py",
+        extra_args=[str(burst), str(interval)],
+        timeout=cfg.get("test_timeout_s", 30),
+    )
+
+
+def _b04_registry_persistence(cfg: dict) -> BehaviorResult:
+    """
+    B-04 — Registry Persistence Simulation
+    Sacrificial child: writes to HKCU\\...\\CurrentVersion\\Run (the real startup
+    persistence key) and a fake COM class key, then self-cleans.
+    """
+    return _run_sacrificial(
+        tid="B-04",
+        name="Registry Persistence Simulation",
+        payload_filename="abae_payload_b04.py",
+        timeout=cfg.get("test_timeout_s", 30),
+    )
+
+
+def _b05_lolbin_abuse(cfg: dict) -> BehaviorResult:
+    """
+    B-05 — Living off the Land (LOLBIN) Abuse
+    Sacrificial child chains: certutil encode/decode, mshta VBScript,
+    PowerShell EncodedCommand, bitsadmin transfer, regsvr32 Squiblydoo.
+    """
+    if not cfg.get("lolbin_enabled", True):
+        return BehaviorResult(
+            tid="B-05", name="LOLBIN Abuse (disabled)",
+            detail="Skipped — lolbin_enabled=false in config."
+        )
+    return _run_sacrificial(
+        tid="B-05",
+        name="LOLBIN Abuse",
+        payload_filename="abae_payload_b05.py",
+        timeout=cfg.get("test_timeout_s", 30),
+    )
+
+
+def _b06_multivector_storm(cfg: dict) -> BehaviorResult:
+    """
+    B-06 — Multi-Vector Concurrent Storm
+    Sacrificial child runs file storm + process burst + entropy cipher +
+    registry churn ALL simultaneously on separate threads.  The concurrent
+    multi-vector pattern is the strongest zero-day heuristic signal.
+    """
+    return _run_sacrificial(
+        tid="B-06",
+        name="Multi-Vector Concurrent Storm",
+        payload_filename="abae_payload_b06.py",
+        timeout=cfg.get("test_timeout_s", 60),  # storm needs more time
     )
 
 
@@ -413,52 +291,46 @@ def _b05_behavioral_consistency(sandbox: str, cfg: dict) -> BehaviorResult:
 
 class ABAEEngine:
     """
-    Orchestrates all 5 behavioral tests inside an isolated sandbox directory.
+    Orchestrates all 6 sacrificial behavioral tests.
     Call run_all() → list[BehaviorResult].
     """
 
     def __init__(self, cfg: dict):
-        self.cfg     = cfg
-        self.sandbox = os.path.abspath(cfg.get("sandbox_dir", "BME_TEST"))
-
-    def _prepare_sandbox(self):
-        shutil.rmtree(self.sandbox, ignore_errors=True)
-        os.makedirs(self.sandbox, exist_ok=True)
-        print(f"[ABAE] Sandbox prepared: {self.sandbox}")
-
-    def _teardown_sandbox(self):
-        shutil.rmtree(self.sandbox, ignore_errors=True)
-        print(f"[ABAE] Sandbox cleaned up.")
+        self.cfg = cfg
 
     def run_all(self) -> list:
-        """Run all 5 behavioral tests; always cleans up sandbox."""
-        self._prepare_sandbox()
+        """Launch all 6 sacrificial tests sequentially; return list[BehaviorResult]."""
+
+        print("[ABAE] ============================================")
+        print("[ABAE]  Sacrificial Lamb Process Isolation Mode")
+        print("[ABAE]  Each test runs in a separate child PID")
+        print("[ABAE]  AV kills child → parent records DETECTED")
+        print("[ABAE] ============================================")
+
+        tests = [
+            ("B-01", "Ransomware File Churn",          _b01_ransomware_churn),
+            ("B-02", "Entropy Storm (XOR Cipher)",     _b02_entropy_storm),
+            ("B-03", "Process Chain + WMIC Recon",     _b03_process_chain),
+            ("B-04", "Registry Persistence",           _b04_registry_persistence),
+            ("B-05", "LOLBIN Abuse",                   _b05_lolbin_abuse),
+            ("B-06", "Multi-Vector Concurrent Storm",  _b06_multivector_storm),
+        ]
+
         results = []
-        try:
-            tests = [
-                ("B-01", "Rapid File Manipulation",        lambda: _b01_file_manipulation(self.sandbox, self.cfg)),
-                ("B-02", "Entropy Spike Simulation",       lambda: _b02_entropy_spike(self.sandbox, self.cfg)),
-                ("B-03", "Process Burst Activity",         lambda: _b03_process_burst(self.sandbox, self.cfg)),
-                ("B-04", "Registry Modification Attempt",  lambda: _b04_registry_modification(self.cfg)),
-                ("B-05", "Behavioral Consistency",         lambda: _b05_behavioral_consistency(self.sandbox, self.cfg)),
-            ]
-
-            for tid, tname, func in tests:
-                print(f"[ABAE] ---- {tid}: {tname} ----")
-                try:
-                    result = func()
-                except Exception as e:
-                    # Unexpected exception → treat as detection (AV killed something)
-                    result = BehaviorResult(
-                        tid=tid, name=tname, detected=True,
-                        detail=f"Test raised exception (possible AV intervention): {e}",
-                        elapsed=0.0,
-                    )
-                verdict = "DETECTED" if result.detected else "NOT DETECTED"
-                print(f"[ABAE]   -> [{verdict}]  {result.elapsed}s  — {result.detail}")
-                results.append(result)
-
-        finally:
-            self._teardown_sandbox()
+        for tid, tname, func in tests:
+            print(f"\n[ABAE] ---- {tid}: {tname} ----")
+            try:
+                result = func(self.cfg)
+            except Exception as e:
+                result = BehaviorResult(
+                    tid=tid, name=tname, detected=True,
+                    detail=f"Engine exception (possible AV intervention): {e}",
+                    elapsed=0.0,
+                )
+            verdict = "DETECTED" if result.detected else "NOT DETECTED"
+            latency = (f"  latency={result.detection_latency}s"
+                       if result.detected else "")
+            print(f"[ABAE]   -> [{verdict}]  {result.elapsed}s{latency}  — {result.detail}")
+            results.append(result)
 
         return results

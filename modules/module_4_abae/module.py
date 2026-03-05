@@ -1,19 +1,21 @@
 """
-Module 4: Adaptive Behavioral Anomaly Engine (ABAE)
-====================================================
+Module 4: Adaptive Behavioral Anomaly Engine (ABAE) — Sacrificial Lamb Edition
+==============================================================================
 Signature-Independent Detection Evaluation Module.
 
-Evaluates whether the installed AV can detect and mitigate suspicious
-real-time system behaviour without relying on known malware signatures.
+Each behavioral test is run in an ISOLATED CHILD PROCESS spawned from %TEMP%
+so the AV cannot whitelist the benchmark's main process.  If the AV kills the
+child, the parent observes the missing sentinel and records DETECTED.
 
-Five behavioral dimensions:
-    B-01  Rapid File System Manipulation  (ransomware-like churn)
-    B-02  Entropy Spike Simulation         (encryption-like writes)
-    B-03  Process Burst Activity           (malicious exec pattern)
-    B-04  Registry Modification Attempt    (persistence simulation)
-    B-05  Behavioral Consistency           (adaptive defense check)
+Six behavioral dimensions:
+    B-01  Ransomware File Churn         (500 files, .locked rename, ransom note)
+    B-02  Entropy Storm / XOR Cipher    (100×8 KB, double XOR in-place)
+    B-03  Process Chain + WMIC Recon    (50 cmd.exe burst, 4-level chain)
+    B-04  Registry Persistence          (HKCU\\...\\Run key + COM class key)
+    B-05  LOLBIN Abuse                  (certutil, mshta, PS Encoded, bitsadmin)
+    B-06  Multi-Vector Concurrent Storm (all vectors on simultaneous threads)
 
-PASS criteria (from abae_config.json): detect ≥ pass_threshold of 5.
+PASS criteria (from abae_config.json): detect ≥ pass_threshold of 6.
 """
 
 import os
@@ -35,9 +37,9 @@ class ABAEModule(BaseModule):
     def __init__(self):
         super().__init__()
         self.name        = "ABAE Behavioral Engine"
-        self.description = ("Signature-independent behavioral anomaly detection: "
-                            "5 tests — file churn, entropy spike, process burst, "
-                            "registry modification, behavioral consistency.")
+        self.description = ("Signature-independent behavioral anomaly detection (Sacrificial Lamb): "
+                            "6 zero-day behavioral tests — ransomware churn, entropy storm, "
+                            "process chain, registry persistence, LOLBIN abuse, multi-vector storm.")
         self.test_results  = []
         self.abae_verdict  = "NOT RUN"
         self._cfg          = self._load_config()
@@ -49,15 +51,17 @@ class ABAEModule(BaseModule):
     def _load_config(self) -> dict:
         defaults = {
             "sandbox_dir":                "BME_TEST",
-            "file_manipulation_count":    300,
-            "entropy_file_count":         50,
-            "process_burst_count":        20,
-            "process_burst_interval_s":   0.04,
+            "file_manipulation_count":    500,
+            "entropy_file_count":         100,
+            "entropy_file_size_kb":       8,
+            "process_burst_count":        50,
+            "process_burst_interval_s":   0.02,
             "file_burst_ops":             1000,
-            "pass_threshold":             3,
+            "pass_threshold":             4,
             "behavioral_consistency_runs": 3,
             "entropy_high_threshold":     7.5,
-            "test_timeout_s":             45,
+            "test_timeout_s":             30,
+            "lolbin_enabled":             True,
         }
         cfg_path = os.path.join(
             os.path.dirname(os.path.abspath(__file__)), "abae_config.json"
@@ -90,10 +94,11 @@ class ABAEModule(BaseModule):
         monitor.start()
 
         print("[ABAE] ============================================")
-        print("[ABAE]  Adaptive Behavioral Anomaly Engine (ABAE)")
-        print("[ABAE]  Signature-Independent Detection Evaluation")
+        print("[ABAE]  ABAE — Sacrificial Lamb Edition")
+        print("[ABAE]  Zero-Day Behavioral Detection Benchmark")
+        print("[ABAE]  6 isolated child-process payloads")
         print("[ABAE] ============================================")
-        print(f"[ABAE] Pass threshold: {self._cfg['pass_threshold']}/5 detections")
+        print(f"[ABAE] Pass threshold: {self._cfg['pass_threshold']}/6 detections")
         print()
 
         # ------ Run engine ------
@@ -126,8 +131,8 @@ class ABAEModule(BaseModule):
 
         print()
         print(f"[ABAE] ============================================")
-        print(f"[ABAE]  Results: {n_det}/5 behavioral tests DETECTED")
-        print(f"[ABAE]  Signature-Independent Protection: {self.abae_verdict}")
+        print(f"[ABAE]  Results: {n_det}/6 behavioral tests DETECTED")
+        print(f"[ABAE]  Zero-Day Behavioral Protection: {self.abae_verdict}")
         print(f"[ABAE] ============================================")
 
         monitor.stop()
