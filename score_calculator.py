@@ -5,12 +5,18 @@ Scoring breakdown (out of 8 pts total):
 
     Detection Score   — 5 pts max  (50% of total 10-pt model)
     Performance Score — 3 pts max  (30% of total 10-pt model)
-    Usability Score   — 2 pts max  (20%) → added separately by comparison website
+    Usability Score   — 2 pts max  (20%) → added separately via Google Forms import
 
 Detection sub-score
 -------------------
   Module detection rate  : (detected_count / total_modules) × 3.0
+    NOTE: detected_count = number of top-level MODULES where detected=True (max 4).
+    ABAE counts as ONE module regardless of how many sub-tests triggered.
   Detection latency      : max(0.0, 2.0 − best_latency_s × 0.15)
+    Latency is sourced from either:
+      (a) SystemMonitor detection_time (wall-clock from monitor.mark_detection()), or
+      (b) per-sub-test detection_latency from ABAE/Atomic test_results,
+    whichever gives the fastest time across all modules.
 
 Performance sub-score
 ---------------------
@@ -46,16 +52,27 @@ def calculate_scores(module_results: list) -> dict:
     # ------------------------------------------------------------------ #
     total_modules  = len(module_results)
     detected_count = 0
-    latencies      = []          # detection_time values in seconds
+    latencies      = []   # all candidate detection latency values in seconds
 
     for r in module_results:
         if r.get("detected", False):
             detected_count += 1
 
         metrics = r.get("metrics", {})
+
+        # (a) Primary: SystemMonitor's wall-clock detection_time
         dt = metrics.get("detection_time")
-        if dt and dt > 0:
+        if dt is not None and dt > 0:
             latencies.append(dt)
+
+        # (b) Secondary: per-sub-test detection_latency from ABAE / Atomic.
+        #     These are measured by the PS/Python child process launchers and
+        #     are often more precise than the SystemMonitor wall-clock timing.
+        #     Only include latencies from sub-tests that were actually detected.
+        for sub in r.get("test_results", []):
+            sub_lat = sub.get("detection_latency")
+            if sub_lat is not None and sub_lat > 0 and sub.get("detected", False):
+                latencies.append(sub_lat)
 
     best_latency_s = min(latencies) if latencies else None
 
@@ -65,7 +82,7 @@ def calculate_scores(module_results: list) -> dict:
     # Part A — module detection rate (0–3 pts)
     rate_score = (detected_count / total_modules) * 3.0
 
-    # Part B — detection speed (0–2 pts)
+    # Part B — detection speed bonus (0–2 pts)
     if best_latency_s is not None:
         speed_score = max(0.0, 2.0 - best_latency_s * 0.15)
     else:
@@ -77,9 +94,9 @@ def calculate_scores(module_results: list) -> dict:
     # 3. Performance Score (3 pts max)                                    #
     # ------------------------------------------------------------------ #
     # Aggregate weighted-average CPU, peak RAM, total disk write
-    cpu_avgs      = []
-    ram_peaks     = []
-    disk_writes   = []
+    cpu_avgs    = []
+    ram_peaks   = []
+    disk_writes = []
 
     for r in module_results:
         m = r.get("metrics", {})
@@ -90,11 +107,11 @@ def calculate_scores(module_results: list) -> dict:
         if m.get("disk_write_mb") is not None:
             disk_writes.append(m["disk_write_mb"])
 
-    agg_cpu_avg      = round(sum(cpu_avgs) / len(cpu_avgs), 2)      if cpu_avgs      else 0.0
-    agg_ram_peak_mb  = round(max(ram_peaks), 2)                      if ram_peaks     else 0.0
-    agg_disk_write   = round(sum(disk_writes), 2)                    if disk_writes   else 0.0
+    agg_cpu_avg     = round(sum(cpu_avgs) / len(cpu_avgs), 2) if cpu_avgs    else 0.0
+    agg_ram_peak_mb = round(max(ram_peaks), 2)                 if ram_peaks   else 0.0
+    agg_disk_write  = round(sum(disk_writes), 2)               if disk_writes else 0.0
 
-    perf_score = 3.0
+    perf_score  = 3.0
     perf_score -= agg_cpu_avg     * 0.015
     perf_score -= agg_ram_peak_mb * 0.005
     perf_score -= agg_disk_write  * 0.002
@@ -110,14 +127,14 @@ def calculate_scores(module_results: list) -> dict:
         "performance_score": performance_score,
         "physical_total":    physical_total,
         "breakdown": {
-            "total_modules":         total_modules,
-            "detected_count":        detected_count,
-            "best_latency_s":        best_latency_s,
-            "rate_score":            round(rate_score, 2),
-            "speed_score":           round(speed_score, 2),
-            "agg_cpu_avg":           agg_cpu_avg,
-            "agg_ram_peak_mb":       agg_ram_peak_mb,
-            "agg_disk_write_mb":     agg_disk_write,
+            "total_modules":     total_modules,
+            "detected_count":    detected_count,
+            "best_latency_s":    best_latency_s,
+            "rate_score":        round(rate_score, 2),
+            "speed_score":       round(speed_score, 2),
+            "agg_cpu_avg":       agg_cpu_avg,
+            "agg_ram_peak_mb":   agg_ram_peak_mb,
+            "agg_disk_write_mb": agg_disk_write,
         },
     }
 
