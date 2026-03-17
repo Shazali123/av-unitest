@@ -25,8 +25,16 @@ def detect_antivirus() -> str:
         sc2 = wmi.WMI(namespace=r"root\SecurityCenter2")
         av_products = sc2.AntiVirusProduct()
         if av_products:
-            # Return the first registered product's display name
-            return av_products[0].displayName
+            # When multiple AVs are registered (common when a third-party AV is
+            # installed — Windows keeps Defender registered alongside it), prefer
+            # the non-Defender entry. Defender is always the fallback.
+            DEFENDER_NAMES = ("windows defender", "microsoft defender")
+            non_defender = [
+                p for p in av_products
+                if not any(d in p.displayName.lower() for d in DEFENDER_NAMES)
+            ]
+            best = non_defender[0] if non_defender else av_products[0]
+            return best.displayName
 
     except Exception as e:
         print(f"SecurityCenter2 query failed, trying fallback: {e}")
