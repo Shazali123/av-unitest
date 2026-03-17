@@ -1072,18 +1072,20 @@
           </thead>
           <tbody>
             <tr>
-              <td rowspan="2"><strong>Detection Score</strong><br><span style="color:var(--text-muted);font-size:.75rem">Automated</span></td>
-              <td>Module Detection Rate</td>
-              <td><span class="pts-badge">3.0 pts</span></td>
-              <td style="color:var(--text-muted);font-size:.78rem">3 primary modules counted: EICAR, GoPhish, Atomic<br>
-                <strong style="color:var(--text)">EICAR &amp; GoPhish:</strong> binary (detected or not)<br>
-                <strong style="color:var(--text)">Atomic:</strong> partial credit = ATT&amp;CK sub-tests detected ÷ 5<br>
-                e.g. 3/5 sub-tests = 60% credit &nbsp;|&nbsp; ABAE excluded (supplementary)</td>
+              <td rowspan="3"><strong>Detection Score</strong><br><span style="color:var(--text-muted);font-size:.75rem">Automated</span></td>
+              <td>EICAR Signature Test</td>
+              <td><span class="pts-badge">0.5 pts</span></td>
+              <td style="color:var(--text-muted);font-size:.78rem">Binary — 0 or 0.5 pts<br>Simplest test: write a known signature file to disk</td>
             </tr>
             <tr>
-              <td>Detection Speed Bonus</td>
-              <td><span class="pts-badge">2.0 pts</span></td>
-              <td style="color:var(--text-muted);font-size:.78rem">max(0, 2.0 − best_latency_s × 0.15)<br>Faster detection = higher bonus</td>
+              <td>GoPhish Simulation</td>
+              <td><span class="pts-badge">1.5 pts</span></td>
+              <td style="color:var(--text-muted);font-size:.78rem">Binary — 0 or 1.5 pts<br>Phishing campaign with URL blocking + credential capture detection</td>
+            </tr>
+            <tr>
+              <td>Atomic ATT&amp;CK (5 sub-tests)</td>
+              <td><span class="pts-badge">3.0 pts</span></td>
+              <td style="color:var(--text-muted);font-size:.78rem">0.6 pts per sub-test detected<br>5 real MITRE ATT&amp;CK techniques: PowerShell, LSASS dump, LOLBin, Tool Transfer, Exfil<br><strong style="color:var(--text)">ABAE excluded</strong> — supplementary PASS/FAIL only</td>
             </tr>
             <tr>
               <td><strong>Performance Score</strong><br><span style="color:var(--text-muted);font-size:.75rem">Automated</span></td>
@@ -1113,8 +1115,8 @@
         </table>
 
         <div class="formula-box">
-          <div><span class="formula-key">Detection Score</span> = (weighted_detection_sum / 3) × 3.0  +  max(0, 2.0 − best_latency_s × 0.15)</div>
-          <div style="color:rgba(122,143,166,.7);font-size:.72rem;padding-left:1em">where weighted_sum = EICAR(0/1) + GoPhish(0/1) + Atomic(sub-tests_detected/5)</div>
+          <div><span class="formula-key">Detection Score</span> = EICAR(0 or 0.5) + GoPhish(0 or 1.5) + Atomic_sub_tests_detected × 0.6</div>
+          <div style="color:rgba(122,143,166,.7);font-size:.72rem;padding-left:1em">e.g. EICAR✓ + GoPhish✓ + 3/5 ATT&amp;CK = 0.5 + 1.5 + 1.8 = 3.8 / 5.0</div>
           <div><span class="formula-key">Performance Score</span> = max(0, 3.0 − cpu_avg×0.015 − ram_peak_mb×0.005 − disk_write_mb×0.002)</div>
           <div><span class="formula-key">Physical Total</span> = Detection Score + Performance Score  <span style="color:var(--text-muted)">[max 8.0]</span></div>
           <div><span class="formula-key">Grand Total</span> = Physical Total + Usability Score  <span style="color:var(--text-muted)">[max 10.0]</span></div>
