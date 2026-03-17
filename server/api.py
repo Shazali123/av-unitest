@@ -130,7 +130,8 @@ def get_summary():
                 ROUND(MAX(detection_score), 2)  AS best_detection,
                 ROUND(AVG(cpu_avg), 1)          AS avg_cpu,
                 ROUND(AVG(ram_peak_mb), 1)      AS avg_ram_mb,
-                MAX(timestamp)                  AS last_run
+                MAX(timestamp)                  AS last_run,
+                MAX(abae_verdict)               AS abae_verdict
             FROM benchmark_results
             GROUP BY av_name
             ORDER BY best_score DESC
