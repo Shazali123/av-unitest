@@ -1,6 +1,7 @@
 <#
 ABAE PS1 Payload B-06 — Multi-Vector Concurrent Storm
 ======================================================
+STAGE_COUNT: 4
 The most aggressive PS1 payload.  Runs all behavioral vectors simultaneously
 using PowerShell runspaces (true parallel threads within one process).
 
@@ -11,12 +12,16 @@ This is the hardest test for an AV behavioral engine because:
   - The total behavioral "noise" exceeds any individual threshold
 
 Runspaces (parallel threads):
-  RS-1: Ransomware file churn (300 files: create → urandom overwrite → .locked)
+  RS-1: Ransomware file churn (300 files: create -> urandom overwrite -> .locked)
   RS-2: Process burst (30 cmd.exe spawns with recon commands)
-  RS-3: XOR cipher loop (50 × 8 KB files, double-pass in-place encryption)
+  RS-3: XOR cipher loop (50 x 8 KB files, double-pass in-place encryption)
   RS-4: Registry churn (20 rapid write/delete cycles on startup key area)
 
 AMSI scans the entire script block at load time AND monitors each runspace.
+
+Stage markers: each runspace emits its own completion token ("RS1_DONE" etc.)
+The engine collects these from stdout to detect partial runspace kills.
+[STAGE_OK] is printed once per completed runspace — 4 expected total.
 #>
 
 $ErrorActionPreference = "SilentlyContinue"
@@ -49,19 +54,22 @@ $RS1_Script = {
         try { Move-Item -LiteralPath $p -Destination $new -Force } catch {}
     }
     $rng.Dispose()
-    "RS1_DONE"
+    "[STAGE_OK] rs1_ransomware_churn"
 }
 
 # ── RS-2: Process Burst ────────────────────────────────────────────────────
 $RS2_Script = {
     $cmds = @("whoami","hostname","ipconfig /all","net user","systeminfo","tasklist")
+    $allOk = $true
     for ($i = 0; $i -lt 30; $i++) {
         $c = $cmds[$i % $cmds.Length]
-        Start-Process -FilePath "cmd.exe" -ArgumentList "/c $c > nul 2>&1" `
-            -WindowStyle Hidden -ErrorAction SilentlyContinue
+        try {
+            Start-Process -FilePath "cmd.exe" -ArgumentList "/c $c > nul 2>&1" `
+                -WindowStyle Hidden -ErrorAction Stop | Out-Null
+        } catch { $allOk = $false }
         Start-Sleep -Milliseconds 20
     }
-    "RS2_DONE"
+    if ($allOk) { "[STAGE_OK] rs2_process_burst" }
 }
 
 # ── RS-3: XOR Cipher Loop ──────────────────────────────────────────────────
@@ -92,14 +100,15 @@ $RS3_Script = {
             } catch {}
         }
     }
-    "RS3_DONE"
+    "[STAGE_OK] rs3_xor_cipher"
 }
 
 # ── RS-4: Registry Churn ──────────────────────────────────────────────────
 $RS4_Script = {
     $key = "HKCU:\Software\ABAE_StormConcurrent"
+    $ok  = $false
     try {
-        New-Item -Path $key -Force | Out-Null
+        New-Item -Path $key -Force -ErrorAction Stop | Out-Null
         for ($i = 0; $i -lt 20; $i++) {
             Set-ItemProperty -Path $key -Name "val_$i" -Value ([System.Guid]::NewGuid().ToString())
             Start-Sleep -Milliseconds 10
@@ -108,8 +117,9 @@ $RS4_Script = {
             Remove-ItemProperty -Path $key -Name "val_$i" -ErrorAction SilentlyContinue
         }
         Remove-Item -Path $key -Recurse -Force -ErrorAction SilentlyContinue
+        $ok = $true
     } catch {}
-    "RS4_DONE"
+    if ($ok) { "[STAGE_OK] rs4_registry_storm" }
 }
 
 # ── Launch all runspaces simultaneously ────────────────────────────────────
@@ -127,14 +137,18 @@ foreach ($rs_def in @(
     $Jobs += @{ PS = $ps; Handle = $handle }
 }
 
-# ── Wait for all runspaces (25s hard cap) ─────────────────────────────────
+# ── Wait for all runspaces (25s hard cap) and collect stage markers ─────────
 $deadline = (Get-Date).AddSeconds(25)
 foreach ($job in $Jobs) {
     $remaining = ($deadline - (Get-Date)).TotalMilliseconds
     if ($remaining -gt 0) {
         $null = $job.Handle.AsyncWaitHandle.WaitOne([int]$remaining)
     }
-    try { $null = $job.PS.EndInvoke($job.Handle) } catch {}
+    try {
+        $result = $job.PS.EndInvoke($job.Handle)
+        # Each runspace returns its [STAGE_OK] string as its pipeline output
+        if ($result) { Write-Output $result }
+    } catch {}
     $job.PS.Dispose()
 }
 

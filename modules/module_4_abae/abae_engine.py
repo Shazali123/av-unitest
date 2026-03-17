@@ -1,7 +1,7 @@
 """
-ABAE Engine — Adaptive Behavioral Anomaly Engine (v3 — PowerShell AMSI Handoff)
+ABAE Engine — Adaptive Behavioral Anomaly Engine (v4 — Three-Layer Detection)
 ================================================================================
-Architecture: Sacrificial Lamb + PowerShell AMSI Handoff
+Architecture: Sacrificial Lamb + PowerShell AMSI Handoff + Multi-Layer Verdict
 
 Why PowerShell instead of Python:
     python.exe is a globally trusted, digitally-signed binary. AVs give it a
@@ -15,28 +15,41 @@ Why PowerShell instead of Python:
 The engine drops a .ps1 payload to %TEMP% then runs:
     powershell.exe -NoProfile -ExecutionPolicy Bypass -NonInteractive -File <path>
 
-Both the python.exe "carrier" AND powershell.exe are separate PIDs. The AV
-sees an unrecognised .ps1 script performing malicious behaviour. Even if
-powershell.exe itself is trusted, AMSI hooks directly into the PS engine
-and can terminate the script mid-execution.
-
-Detection logic (same sentinel pattern):
+Three-Layer Detection (v4)
+--------------------------
+Layer 1 — Sentinel check (original):
     Payload prints "PAYLOAD_COMPLETE" as its very last line.
-    Parent checks stdout:
-        Sentinel present, rc=0    → NOT DETECTED
-        Sentinel missing, rc≠0    → DETECTED (AV/AMSI killed the script)
-        TimeoutExpired            → DETECTED (AV suspended / hung the script)
-        Launch blocked            → DETECTED (AV blocked powershell.exe)
+    Absent sentinel + rc!=0 = AV killed the entire PS script.
+
+Layer 2 — Stage-count check (NEW):
+    Each payload declares STAGE_COUNT: N in its header comment.
+    Sub-operations print "[STAGE_OK] <name>" ONLY if they succeed.
+    If an AV kills a child process (e.g. regsvr32.exe) without terminating
+    the parent script, that stage's marker is absent → DETECTED.
+
+Layer 3 — Windows Security Event Log (NEW):
+    After each sub-test, query Windows Defender's operational event log for
+    Event IDs 1116 (threat detected) or 1117 (action taken) timestamped
+    within the test window. Any match → DETECTED regardless of sentinel.
+
+Detection verdict table:
+    Sentinel absent, rc!=0                      → DETECTED (AV killed script)
+    Sentinel present, stages missing            → DETECTED (child process kill)
+    Sentinel present, all stages OK, event hit  → DETECTED (event log catch)
+    Sentinel present, all stages OK, no events  → NOT DETECTED
+    TimeoutExpired                              → DETECTED
+    Launch blocked                              → DETECTED
 
 Six behavioral tests:
-    B-01  Ransomware File Churn           (.ps1 — uses RNGCryptoServiceProvider)
-    B-02  Entropy Storm / XOR Cipher      (.ps1 — double-pass in-place cipher)
-    B-03  Process Chain + Invoke-Expr     (.ps1 — burst + IEX + WMIC)
-    B-04  Registry Persistence + Storm    (.ps1 — real Run key + COM + 20 churn)
-    B-05  LOLBIN + AMSI String Triggers   (.ps1 — certutil/mshta/PS-encoded/bitsadmin/regsvr32/Add-MpPreference)
-    B-06  Concurrent Runspace Storm       (.ps1 — 4 parallel runspaces: all vectors at once)
+    B-01  Ransomware File Churn           STAGE_COUNT:4
+    B-02  Entropy Storm / XOR Cipher      STAGE_COUNT:3
+    B-03  Process Chain + Invoke-Expr     STAGE_COUNT:4
+    B-04  Registry Persistence + Storm    STAGE_COUNT:5
+    B-05  LOLBIN + AMSI String Triggers   STAGE_COUNT:6
+    B-06  Concurrent Runspace Storm       STAGE_COUNT:4
 """
 
+import re
 import os
 import sys
 import time
@@ -45,7 +58,9 @@ import tempfile
 import subprocess
 from dataclasses import dataclass, field
 
-SENTINEL = "PAYLOAD_COMPLETE"
+SENTINEL      = "PAYLOAD_COMPLETE"
+STAGE_OK_TAG  = "[STAGE_OK]"
+STAGE_COUNT_RE = re.compile(r"STAGE_COUNT:\s*(\d+)")
 
 # ---------------------------------------------------------------------------
 # Result container (unchanged — compatible with module.py / results_handler)
@@ -85,7 +100,44 @@ def _copy_payload_to_temp(payload_filename: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Core launchers
+# Layer 3: Windows Security Event Log query
+# ---------------------------------------------------------------------------
+
+def _query_defender_events(since_epoch: float) -> list:
+    """
+    Query the Windows Defender operational event log for threat detection
+    events (IDs 1116 = Threat Found, 1117 = Action Taken) that occurred
+    at or after `since_epoch` (Unix timestamp).
+
+    Returns a list of event description strings (may be empty).
+    Does NOT require administrator rights.
+    """
+    since_dt = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(since_epoch))
+    ps_cmd = (
+        f"Get-WinEvent -FilterHashtable @{{"
+        f"LogName='Microsoft-Windows-Windows Defender/Operational';"
+        f"Id=1116,1117;"
+        f"StartTime='{since_dt}'"
+        f"}} -ErrorAction SilentlyContinue | "
+        f"Select-Object -ExpandProperty Message | "
+        f"Select-Object -First 5"
+    )
+    try:
+        result = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-NonInteractive",
+             "-Command", ps_cmd],
+            capture_output=True, text=True, timeout=10,
+        )
+        out = (result.stdout or "").strip()
+        if out:
+            return [line.strip() for line in out.splitlines() if line.strip()]
+    except Exception:
+        pass
+    return []
+
+
+# ---------------------------------------------------------------------------
+# Core launcher — Three-Layer Detection
 # ---------------------------------------------------------------------------
 
 def _run_ps1_sacrificial(
@@ -96,24 +148,34 @@ def _run_ps1_sacrificial(
     timeout: int = 30,
 ) -> BehaviorResult:
     """
-    PowerShell AMSI Handoff launcher.
+    PowerShell AMSI Handoff launcher with three-layer detection.
 
-    1. Copies .ps1 payload to %TEMP%/<uuid>/
-    2. Spawns:  powershell.exe -NoProfile -ExecutionPolicy Bypass
-                               -NonInteractive -File <path> [args...]
-    3. Checks stdout for PAYLOAD_COMPLETE sentinel
-    4. Returns BehaviorResult with DETECTED=True if AV/AMSI intervened
+    Layer 1 — Sentinel: PAYLOAD_COMPLETE absent + rc!=0 → DETECTED
+    Layer 2 — Stages:   [STAGE_OK] count < STAGE_COUNT → DETECTED
+    Layer 3 — EventLog: Defender event 1116/1117 in test window → DETECTED
     """
     t0         = time.time()
     temp_dir   = None
     detected   = False
     detect_lat = 0.0
     detail     = ""
-    extra      = {"payload": payload_ps1, "mode": "powershell_amsi"}
+    extra      = {"payload": payload_ps1, "mode": "powershell_amsi_v4"}
 
     try:
         dst      = _copy_payload_to_temp(payload_ps1)
         temp_dir = os.path.dirname(dst)
+
+        # Read STAGE_COUNT from the payload source
+        src_path = os.path.join(_payloads_dir(), payload_ps1)
+        expected_stages = 0
+        try:
+            with open(src_path, "r", encoding="utf-8", errors="ignore") as f:
+                header = f.read(1500)   # only scan the header comment
+            m = STAGE_COUNT_RE.search(header)
+            if m:
+                expected_stages = int(m.group(1))
+        except Exception:
+            pass
 
         cmd = [
             "powershell.exe",
@@ -123,7 +185,8 @@ def _run_ps1_sacrificial(
             "-File", dst,
         ] + (extra_args or [])
 
-        print(f"[ABAE] {tid} Spawning PS1 payload via AMSI: {payload_ps1}")
+        print(f"[ABAE] {tid} Spawning PS1 payload via AMSI: {payload_ps1}  "
+              f"(expecting {expected_stages} stage markers)")
 
         result = subprocess.run(
             cmd,
@@ -136,40 +199,79 @@ def _run_ps1_sacrificial(
         returncode   = result.returncode
         sentinel_ok  = SENTINEL in stdout
 
-        extra["returncode"]  = returncode
-        extra["sentinel_ok"] = sentinel_ok
-        extra["stderr_tail"] = (result.stderr or "")[-300:]
+        # ── Layer 2: Stage count check ────────────────────────────────────
+        stage_lines  = [ln for ln in stdout.splitlines() if STAGE_OK_TAG in ln]
+        stages_found = len(stage_lines)
+        stages_missing = max(0, expected_stages - stages_found) if expected_stages > 0 else 0
 
-        if sentinel_ok and returncode == 0:
-            detected = False
-            detail   = "PS1 payload completed — sentinel present, rc=0. AMSI did not block."
-        elif not sentinel_ok and returncode != 0:
-            detected   = True
-            detect_lat = round(time.time() - t0, 3)
-            detail     = (f"AMSI/AV terminated PowerShell script. "
-                          f"Sentinel absent, returncode={returncode}. "
-                          f"Stderr: {extra['stderr_tail'][:150]}")
+        # ── Layer 3: Windows Security Event Log ──────────────────────────
+        defender_events = _query_defender_events(t0)
+        event_hit = len(defender_events) > 0
+
+        extra["returncode"]     = returncode
+        extra["sentinel_ok"]    = sentinel_ok
+        extra["stages_expected"] = expected_stages
+        extra["stages_found"]   = stages_found
+        extra["stages_missing"] = stages_missing
+        extra["event_log_hits"] = len(defender_events)
+        extra["stderr_tail"]    = (result.stderr or "")[-300:]
+
+        detect_lat = round(time.time() - t0, 3)
+
+        # ── Verdict ───────────────────────────────────────────────────────
+        if not sentinel_ok and returncode != 0:
+            # Layer 1: AV/AMSI killed the entire script
+            detected = True
+            detail   = (f"[L1] AMSI/AV terminated PowerShell script. "
+                        f"Sentinel absent, rc={returncode}. "
+                        f"Stderr: {extra['stderr_tail'][:150]}")
+
+        elif sentinel_ok and stages_missing > 0:
+            # Layer 2: Script completed but child processes were killed
+            detected = True
+            detail   = (f"[L2] Surgical child-process termination detected. "
+                        f"Sentinel present but {stages_missing}/{expected_stages} "
+                        f"stage(s) missing. "
+                        f"Found stages: {[l.split(STAGE_OK_TAG)[-1].strip() for l in stage_lines]}")
+
+        elif sentinel_ok and event_hit:
+            # Layer 3: Defender logged a threat during the test window
+            detected = True
+            detail   = (f"[L3] Windows Defender event log hit during test window. "
+                        f"{len(defender_events)} event(s) found. "
+                        f"Snippet: {defender_events[0][:200]}")
+
         elif not sentinel_ok and returncode == 0:
-            # Script exited clean but never printed sentinel → PS error mid-script
+            # Script exited clean but sentinel missing — PS internal error, not AV
             detected = False
-            detail   = "PS1 exited 0 but sentinel missing — internal PS error, not AMSI kill."
+            detail   = (f"PS1 exited 0 but sentinel missing — "
+                        f"likely internal PS error, not AMSI kill. "
+                        f"Stages found: {stages_found}/{expected_stages}")
             extra["warning"] = "no_sentinel_rc0"
+
+        elif sentinel_ok and returncode != 0:
+            # Sentinel present but non-zero rc — possible AMSI logged + killed on exit
+            detected = True
+            detail   = f"[L1] AMSI intervention on exit. Sentinel present but rc={returncode}."
+
         else:
-            # Sentinel present but rc != 0 — AMSI may have logged and killed on exit
-            detected   = True
-            detect_lat = round(time.time() - t0, 3)
-            detail     = f"AMSI intervention suspected on exit. Sentinel present but rc={returncode}."
+            # All clear
+            detected = False
+            detail   = (f"PS1 payload completed cleanly. "
+                        f"Sentinel ✓, rc=0, stages {stages_found}/{expected_stages}, "
+                        f"no Defender events.")
+            detect_lat = 0.0
 
     except subprocess.TimeoutExpired:
         detected   = True
         detect_lat = round(time.time() - t0, 3)
-        detail     = f"AMSI/AV suspended PowerShell script — TimeoutExpired after {timeout}s."
+        detail     = f"[L1] AV/AMSI suspended PowerShell script — TimeoutExpired after {timeout}s."
         extra["timeout"] = timeout
 
     except (FileNotFoundError, PermissionError, OSError) as e:
         detected   = True
         detect_lat = round(time.time() - t0, 3)
-        detail     = f"AV blocked powershell.exe launch: {e}"
+        detail     = f"[L1] AV blocked powershell.exe launch: {e}"
         extra["launch_error"] = str(e)
 
     except Exception as e:

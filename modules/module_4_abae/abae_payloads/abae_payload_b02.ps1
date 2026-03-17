@@ -1,12 +1,16 @@
 <#
 ABAE PS1 Payload B-02 — Entropy Storm / XOR Cipher Loop
 =========================================================
+STAGE_COUNT: 3
 AMSI behavioral signal: rapid read-modify-write loop using XOR transformation.
 This is the exact pattern modern ransomware uses for in-place encryption:
-  read plaintext → encrypt in memory → write ciphertext back → next file
+  read plaintext -> encrypt in memory -> write ciphertext back -> next file
 
 The XOR "cipher" is intentionally simple so AMSI pattern-matches the
 read-modify-write-loop structure, not the sophistication of the algorithm.
+
+Stage markers ([STAGE_OK] lines): printed after each phase completes.
+Missing markers indicate AV quarantined a phase mid-execution.
 #>
 
 param(
@@ -43,6 +47,7 @@ try {
         $paths += $p
     }
     $rng.Dispose()
+    Write-Output "[STAGE_OK] phase1_seed_files"
 
     # Phase 2: XOR in-place (first pass) — read-modify-write encryption loop
     foreach ($p in $paths) {
@@ -50,6 +55,7 @@ try {
         $encrypted  = Invoke-XorBytes $data
         [System.IO.File]::WriteAllBytes($p, $encrypted)
     }
+    Write-Output "[STAGE_OK] phase2_xor_first_pass"
 
     # Phase 3: Second XOR pass — double-cipher signal (high-scoring heuristic)
     foreach ($p in $paths) {
@@ -57,6 +63,7 @@ try {
         $encrypted  = Invoke-XorBytes $data
         [System.IO.File]::WriteAllBytes($p, $encrypted)
     }
+    Write-Output "[STAGE_OK] phase3_xor_second_pass"
 
 } finally {
     Remove-Item -Recurse -Force -Path $StageDir -ErrorAction SilentlyContinue
