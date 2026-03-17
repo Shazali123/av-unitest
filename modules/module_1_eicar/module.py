@@ -4,7 +4,10 @@ Generates EICAR test file and monitors for antivirus detection.
 
 Detection strategy:
   1. Check BEFORE write - if baseline file check passes
-  2. Write EICAR string
+  2. Write EICAR string with .com extension (industry standard)
+     NOTE: .com is used deliberately — many AVs skip .txt files
+     for performance, but any executable extension (.com/.exe)
+     triggers immediate real-time scanning on all major AVs.
   3. Immediately poll file existence and content every 50ms for up to 10s
   4. Also handles the case where WD quarantines so fast the file
      never appears (detected = True if write succeeded but file is
@@ -85,7 +88,12 @@ class EICARModule(BaseModule):
                 os.path.dirname(os.path.abspath(__file__)), 'temp'
             )))
             os.makedirs(temp_dir, exist_ok=True)
-            self.test_file_path = os.path.join(temp_dir, 'eicar_test.txt')
+            # .com extension is the EICAR industry standard:
+            # many AVs deliberately skip .txt files during real-time scanning
+            # to save CPU (a well-known AV optimisation). Using .com signals
+            # "potential executable" and forces immediate scanning on all
+            # major AVs including TotalAV, Avast, Bitdefender, and Defender.
+            self.test_file_path = os.path.join(temp_dir, 'eicar_test.com')
 
             # --- Remove any stale file from previous run ---
             if os.path.exists(self.test_file_path):
