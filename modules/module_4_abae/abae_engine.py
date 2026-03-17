@@ -36,6 +36,9 @@ Detection verdict table:
     Sentinel absent, rc!=0                      → DETECTED (AV killed script)
     Sentinel present, stages missing            → DETECTED (child process kill)
     Sentinel present, all stages OK, event hit  → DETECTED (event log catch)
+    Payload file quarantined during run         → DETECTED (file integrity)
+    Payload file content wiped/modified         → DETECTED (file integrity)
+    Third-party AV event in Application log     → DETECTED (vendor event log)
     Sentinel present, all stages OK, no events  → NOT DETECTED
     TimeoutExpired                              → DETECTED
     Launch blocked                              → DETECTED
@@ -137,6 +140,57 @@ def _query_defender_events(since_epoch: float) -> list:
 
 
 # ---------------------------------------------------------------------------
+# Layer 5: Third-party AV Application event log query
+# ---------------------------------------------------------------------------
+
+# Known AV vendor event-source substrings in the Windows Application log.
+# Add new vendors here as testing expands.
+_AV_EVENT_SOURCES = (
+    "avast", "avg", "bitdefender", "totalav", "total av",
+    "kaspersky", "norton", "mcafee", "eset", "sophos",
+    "malwarebytes", "avira", "f-secure", "webroot", "trend micro",
+    "comodo", "panda", "cylance", "crowdstrike", "sentinel one",
+)
+
+
+def _query_thirdparty_av_events(since_epoch: float) -> list:
+    """
+    Query the Windows Application event log for entries from any known
+    third-party AV vendor that occurred at or after `since_epoch`.
+
+    Catches AVs that quarantine files or block operations without writing
+    to the Windows Defender operational log (e.g. Avast, Bitdefender).
+
+    Returns a list of (source, message) tuples (may be empty).
+    Does NOT require administrator rights.
+    """
+    since_dt = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(since_epoch))
+    # Build a regex that matches any known vendor name (case-insensitive)
+    vendor_pattern = "|".join(_AV_EVENT_SOURCES)
+    ps_cmd = (
+        f"$since = [datetime]'{since_dt}'; "
+        f"$pattern = '{vendor_pattern}'; "
+        f"Get-WinEvent -LogName Application -ErrorAction SilentlyContinue | "
+        f"Where-Object {{$_.TimeCreated -ge $since -and "
+        f"  $_.ProviderName -match $pattern}} | "
+        f"Select-Object -First 5 | "
+        f"ForEach-Object {{ '$(' + $_.ProviderName + ')|' + $_.Message.Substring(0, [Math]::Min(200,$_.Message.Length)) }}"
+    )
+    try:
+        result = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-NonInteractive",
+             "-Command", ps_cmd],
+            capture_output=True, text=True, timeout=12,
+        )
+        out = (result.stdout or "").strip()
+        if out:
+            return [line.strip() for line in out.splitlines() if line.strip()]
+    except Exception:
+        pass
+    return []
+
+
+# ---------------------------------------------------------------------------
 # Core launcher — Three-Layer Detection
 # ---------------------------------------------------------------------------
 
@@ -148,22 +202,31 @@ def _run_ps1_sacrificial(
     timeout: int = 30,
 ) -> BehaviorResult:
     """
-    PowerShell AMSI Handoff launcher with three-layer detection.
+    PowerShell AMSI Handoff launcher with five-layer detection.
 
-    Layer 1 — Sentinel: PAYLOAD_COMPLETE absent + rc!=0 → DETECTED
-    Layer 2 — Stages:   [STAGE_OK] count < STAGE_COUNT → DETECTED
-    Layer 3 — EventLog: Defender event 1116/1117 in test window → DETECTED
+    Layer 1 — Sentinel:      PAYLOAD_COMPLETE absent + rc!=0 → DETECTED
+    Layer 2 — Stages:        [STAGE_OK] count < STAGE_COUNT → DETECTED
+    Layer 3 — Defender log:  Event 1116/1117 in Defender log → DETECTED
+    Layer 4 — File integrity: PS1 payload removed/tampered   → DETECTED
+    Layer 5 — Vendor log:    Third-party AV event in App log → DETECTED
     """
     t0         = time.time()
     temp_dir   = None
+    dst        = None          # track for Layer 4 file integrity check
+    orig_size  = None          # track original payload file size
     detected   = False
     detect_lat = 0.0
     detail     = ""
-    extra      = {"payload": payload_ps1, "mode": "powershell_amsi_v4"}
+    extra      = {"payload": payload_ps1, "mode": "powershell_amsi_v5"}
 
     try:
         dst      = _copy_payload_to_temp(payload_ps1)
         temp_dir = os.path.dirname(dst)
+        # Record the original file size so we can detect content-wipe by AV
+        try:
+            orig_size = os.path.getsize(dst)
+        except OSError:
+            orig_size = None
 
         # Read STAGE_COUNT from the payload source
         src_path = os.path.join(_payloads_dir(), payload_ps1)
@@ -204,17 +267,42 @@ def _run_ps1_sacrificial(
         stages_found = len(stage_lines)
         stages_missing = max(0, expected_stages - stages_found) if expected_stages > 0 else 0
 
-        # ── Layer 3: Windows Security Event Log ──────────────────────────
+        # ── Layer 3: Windows Defender event log ────────────────────────────
         defender_events = _query_defender_events(t0)
-        event_hit = len(defender_events) > 0
+        defender_hit = len(defender_events) > 0
 
-        extra["returncode"]     = returncode
-        extra["sentinel_ok"]    = sentinel_ok
-        extra["stages_expected"] = expected_stages
-        extra["stages_found"]   = stages_found
-        extra["stages_missing"] = stages_missing
-        extra["event_log_hits"] = len(defender_events)
-        extra["stderr_tail"]    = (result.stderr or "")[-300:]
+        # ── Layer 4: Payload file integrity check ──────────────────────────
+        # Catches AVs (e.g. Avast) that quarantine the .ps1 file AFTER
+        # PowerShell has loaded it into memory and the script completes.
+        file_quarantined = False
+        file_wiped       = False
+        if dst is not None:
+            if not os.path.exists(dst):
+                file_quarantined = True   # AV deleted/quarantined the file
+            elif orig_size is not None:
+                try:
+                    current_size = os.path.getsize(dst)
+                    if current_size < orig_size * 0.5:   # >50% content removed
+                        file_wiped = True
+                except OSError:
+                    file_quarantined = True  # can't read = AV locked it
+
+        # ── Layer 5: Third-party AV Application event log ──────────────────
+        vendor_events = _query_thirdparty_av_events(t0)
+        vendor_hit    = len(vendor_events) > 0
+
+        event_hit = defender_hit or vendor_hit  # combined L3+L5
+
+        extra["returncode"]       = returncode
+        extra["sentinel_ok"]      = sentinel_ok
+        extra["stages_expected"]  = expected_stages
+        extra["stages_found"]     = stages_found
+        extra["stages_missing"]   = stages_missing
+        extra["defender_events"]  = len(defender_events)
+        extra["vendor_events"]    = len(vendor_events)
+        extra["file_quarantined"] = file_quarantined
+        extra["file_wiped"]       = file_wiped
+        extra["stderr_tail"]      = (result.stderr or "")[-300:]
 
         detect_lat = round(time.time() - t0, 3)
 
@@ -226,6 +314,16 @@ def _run_ps1_sacrificial(
                         f"Sentinel absent, rc={returncode}. "
                         f"Stderr: {extra['stderr_tail'][:150]}")
 
+        elif file_quarantined or file_wiped:
+            # Layer 4: AV quarantined/wiped the payload file after execution
+            # (e.g. Avast moves the .ps1 to quarantine but lets the already-
+            # loaded script continue running — sentinel appears but file is gone)
+            detected = True
+            reason   = "quarantined (file removed)" if file_quarantined else "content wiped by AV"
+            detail   = (f"[L4] Payload file {reason} during execution. "
+                        f"Script ran from memory (sentinel present) but "
+                        f"AV acted on the file on disk.")
+
         elif sentinel_ok and stages_missing > 0:
             # Layer 2: Script completed but child processes were killed
             detected = True
@@ -234,12 +332,17 @@ def _run_ps1_sacrificial(
                         f"stage(s) missing. "
                         f"Found stages: {[l.split(STAGE_OK_TAG)[-1].strip() for l in stage_lines]}")
 
-        elif sentinel_ok and event_hit:
-            # Layer 3: Defender logged a threat during the test window
+        elif event_hit:
+            # Layer 3/5: AV event log hit (Defender or third-party vendor)
             detected = True
-            detail   = (f"[L3] Windows Defender event log hit during test window. "
-                        f"{len(defender_events)} event(s) found. "
-                        f"Snippet: {defender_events[0][:200]}")
+            if defender_hit:
+                detail = (f"[L3] Windows Defender event log hit. "
+                          f"{len(defender_events)} event(s). "
+                          f"Snippet: {defender_events[0][:200]}")
+            else:
+                detail = (f"[L5] Third-party AV event log hit. "
+                          f"{len(vendor_events)} event(s). "
+                          f"Snippet: {vendor_events[0][:200]}")
 
         elif not sentinel_ok and returncode == 0:
             # Script exited clean but sentinel missing — PS internal error, not AV
@@ -255,11 +358,11 @@ def _run_ps1_sacrificial(
             detail   = f"[L1] AMSI intervention on exit. Sentinel present but rc={returncode}."
 
         else:
-            # All clear
+            # All clear — all five layers gave no signal
             detected = False
             detail   = (f"PS1 payload completed cleanly. "
                         f"Sentinel ✓, rc=0, stages {stages_found}/{expected_stages}, "
-                        f"no Defender events.")
+                        f"file intact, no AV events.")
             detect_lat = 0.0
 
     except subprocess.TimeoutExpired:
