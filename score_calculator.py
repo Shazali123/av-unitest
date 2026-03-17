@@ -21,10 +21,15 @@ Detection weights (total = 5.0 pts)
 Performance sub-score (3 pts max)
 ----------------------------------
   Start at 3.0, deduct:
-    cpu_avg      × 0.015
-    ram_peak_mb  × 0.005
-    disk_write_mb× 0.002
+    cpu_avg      × 0.010   (was 0.015)
+    ram_peak_mb  × 0.002   (was 0.005)
+    disk_write_mb× 0.001   (was 0.002)
   Clamped to [0.0, 3.0]
+
+  Calibration targets (same standard for all AVs):
+    Light AV  (~30% CPU, ~150 MB RAM)  → ~2.40 / 3.0
+    Mid   AV  (~54% CPU, ~250 MB RAM)  → ~1.96 / 3.0
+    Heavy AV  (~80% CPU, ~300 MB RAM)  → ~1.60 / 3.0
 
 Detection weights rationale
 ----------------------------
@@ -141,9 +146,9 @@ def calculate_scores(module_results: list) -> dict:
     agg_disk_write  = round(sum(disk_writes), 2)               if disk_writes else 0.0
 
     perf_score  = 3.0
-    perf_score -= agg_cpu_avg     * 0.015
-    perf_score -= agg_ram_peak_mb * 0.005
-    perf_score -= agg_disk_write  * 0.002
+    perf_score -= agg_cpu_avg     * 0.010
+    perf_score -= agg_ram_peak_mb * 0.002
+    perf_score -= agg_disk_write  * 0.001
     performance_score = round(max(0.0, min(3.0, perf_score)), 2)
 
     # ------------------------------------------------------------------ #

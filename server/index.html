@@ -1091,7 +1091,7 @@
               <td><strong>Performance Score</strong><br><span style="color:var(--text-muted);font-size:.75rem">Automated</span></td>
               <td>System Resource Overhead</td>
               <td><span class="pts-badge">3.0 pts</span></td>
-              <td style="color:var(--text-muted);font-size:.78rem">Starts at 3.0, deducted by:<br>CPU avg × 0.015 + RAM peak (MB) × 0.005 + Disk write (MB) × 0.002</td>
+              <td style="color:var(--text-muted);font-size:.78rem">Starts at 3.0, deducted by:<br>CPU avg × 0.010 + RAM peak (MB) × 0.002 + Disk write (MB) × 0.001<br><span style="font-size:.72rem">Same standard for all AVs regardless of type</span></td>
             </tr>
             <tr style="background:rgba(0,229,255,.04)">
               <td><strong>Physical Total</strong></td>
@@ -1117,7 +1117,7 @@
         <div class="formula-box">
           <div><span class="formula-key">Detection Score</span> = EICAR(0 or 0.5) + GoPhish(0 or 1.5) + Atomic_sub_tests_detected × 0.6</div>
           <div style="color:rgba(122,143,166,.7);font-size:.72rem;padding-left:1em">e.g. EICAR✓ + GoPhish✓ + 3/5 ATT&amp;CK = 0.5 + 1.5 + 1.8 = 3.8 / 5.0</div>
-          <div><span class="formula-key">Performance Score</span> = max(0, 3.0 − cpu_avg×0.015 − ram_peak_mb×0.005 − disk_write_mb×0.002)</div>
+          <div><span class="formula-key">Performance Score</span> = max(0, 3.0 − cpu_avg×0.010 − ram_peak_mb×0.002 − disk_write_mb×0.001)</div>
           <div><span class="formula-key">Physical Total</span> = Detection Score + Performance Score  <span style="color:var(--text-muted)">[max 8.0]</span></div>
           <div><span class="formula-key">Grand Total</span> = Physical Total + Usability Score  <span style="color:var(--text-muted)">[max 10.0]</span></div>
           <div style="margin-top:6px;color:rgba(122,143,166,.7);font-size:.72rem">ABAE is supplementary — shown as PASS/FAIL only, not counted in the score</div>
