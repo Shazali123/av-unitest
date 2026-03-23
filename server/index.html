@@ -957,66 +957,7 @@
       font-weight: 600;
     }
 
-    /* ─── Google Forms / Usability Section ─────────────────── */
-    .import-banner {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      background: rgba(0,229,255,.05);
-      border: 1px solid rgba(0,229,255,.2);
-      border-radius: 10px;
-      padding: 12px 18px;
-      margin-bottom: 20px;
-      font-size: .82rem;
-      color: var(--text-muted);
-    }
 
-    .import-banner .import-icon {
-      font-size: 1.3rem;
-      flex-shrink: 0;
-    }
-
-    .import-banner strong {
-      color: var(--text);
-    }
-
-    .usability-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: .82rem;
-    }
-
-    .usability-table th {
-      background: var(--surface2);
-      color: var(--text-muted);
-      font-size: .67rem;
-      font-weight: 600;
-      letter-spacing: .8px;
-      text-transform: uppercase;
-      padding: 9px 12px;
-      text-align: left;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .usability-table td {
-      padding: 10px 12px;
-      border-bottom: 1px solid var(--border);
-      vertical-align: middle;
-    }
-
-    .usability-table tbody tr:last-child td { border-bottom: none; }
-
-    .pending-chip {
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-      font-size: .73rem;
-      color: var(--amber);
-      background: rgba(255,171,64,.08);
-      border: 1px solid rgba(255,171,64,.2);
-      border-radius: 6px;
-      padding: 3px 9px;
-    }
   </style>
 </head>
 
@@ -1047,7 +988,6 @@
       ⚠️ <span id="alert-msg">Could not reach API. Is Flask running?</span>
     </div>
 
-    <!-- HOW SCORING WORKS (open by default) -->
     <div class="info-panel open" id="scoring-info-panel">
       <div class="info-panel-header" onclick="document.getElementById('scoring-info-panel').classList.toggle('open')">
         <span class="info-panel-title">ℹ️ How Scoring Works — Click to Collapse</span>
@@ -1055,78 +995,80 @@
       </div>
       <div class="info-panel-body">
         <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:16px">
-          Each antivirus product is evaluated against a <strong style="color:var(--text)">10-point grand total</strong>.
-          The benchmark tool automatically measures the <strong style="color:var(--cyan)">Physical Score (8 pts)</strong>.
-          The remaining <strong style="color:var(--amber)">Usability Score (2 pts)</strong> is sourced from a separate
-          public Google Forms survey and imported into this dashboard.
+          Each antivirus product is evaluated on a clean <strong style="color:var(--text)">10-point scale</strong>
+          using a <strong style="color:var(--cyan)">60/40 split</strong> between
+          <strong style="color:var(--cyan)">Detection Effectiveness (6.0 pts)</strong> and
+          <strong style="color:var(--amber)">System Performance Impact (4.0 pts)</strong>.
+          All scoring is fully automated by the benchmark tool.
         </p>
 
         <table class="score-table">
           <thead>
             <tr>
               <th>Component</th>
-              <th>Sub-category</th>
+              <th>Layer / Category</th>
               <th>Max Points</th>
               <th>How It's Measured</th>
             </tr>
           </thead>
           <tbody>
             <tr>
-              <td rowspan="3"><strong>Detection Score</strong><br><span style="color:var(--text-muted);font-size:.75rem">Automated</span></td>
-              <td>EICAR Signature Test</td>
-              <td><span class="pts-badge">0.5 pts</span></td>
-              <td style="color:var(--text-muted);font-size:.78rem">Binary — 0 or 0.5 pts<br>Simplest test: write a known signature file to disk</td>
+              <td rowspan="4"><strong>Detection Effectiveness</strong><br><span style="color:var(--text-muted);font-size:.75rem">60% — Automated</span></td>
+              <td>Layer 1 — EICAR Signature</td>
+              <td><span class="pts-badge">1.0 pt</span></td>
+              <td style="color:var(--text-muted);font-size:.78rem">Binary — 0 or 1.0 pt<br>Known test file dropped to disk — simplest detection test</td>
             </tr>
             <tr>
-              <td>GoPhish Simulation</td>
-              <td><span class="pts-badge">1.5 pts</span></td>
-              <td style="color:var(--text-muted);font-size:.78rem">Binary — 0 or 1.5 pts<br>Phishing campaign with URL blocking + credential capture detection</td>
+              <td>Layer 2 — GoPhish Simulation</td>
+              <td><span class="pts-badge">1.0 pt</span></td>
+              <td style="color:var(--text-muted);font-size:.78rem">Binary — 0 or 1.0 pt<br>Phishing campaign with URL blocking + credential capture detection</td>
             </tr>
             <tr>
-              <td>Atomic ATT&amp;CK (5 sub-tests)</td>
-              <td><span class="pts-badge">3.0 pts</span></td>
-              <td style="color:var(--text-muted);font-size:.78rem">0.6 pts per sub-test detected<br>5 real MITRE ATT&amp;CK techniques: PowerShell, LSASS dump, LOLBin, Tool Transfer, Exfil<br><strong style="color:var(--text)">ABAE excluded</strong> — supplementary PASS/FAIL only</td>
+              <td>Layer 3 — MITRE Atomic Red Team</td>
+              <td><span class="pts-badge">2.0 pts</span></td>
+              <td style="color:var(--text-muted);font-size:.78rem">Split across sub-tests (proportional scoring)<br>Real ATT&amp;CK techniques: PowerShell, LSASS dump, LOLBin, etc.</td>
             </tr>
             <tr>
-              <td><strong>Performance Score</strong><br><span style="color:var(--text-muted);font-size:.75rem">Automated</span></td>
-              <td>System Resource Overhead</td>
-              <td><span class="pts-badge">3.0 pts</span></td>
-              <td style="color:var(--text-muted);font-size:.78rem">Starts at 3.0, deducted by:<br>CPU avg × 0.010 + RAM peak (MB) × 0.002 + Disk write (MB) × 0.001<br><span style="font-size:.72rem">Same standard for all AVs regardless of type</span></td>
-            </tr>
-            <tr style="background:rgba(0,229,255,.04)">
-              <td><strong>Physical Total</strong></td>
-              <td>Detection + Performance</td>
-              <td><span class="pts-badge total">8.0 pts</span></td>
-              <td style="color:var(--text-muted);font-size:.78rem">Measured automatically by this benchmark tool</td>
+              <td>Layer 4 — ABAE Behavioral Engine</td>
+              <td><span class="pts-badge">2.0 pts</span></td>
+              <td style="color:var(--text-muted);font-size:.78rem">Split across behavioral sub-tests (proportional scoring)<br>Signature-independent detection — the <strong style="color:var(--text)">modern standard</strong> for endpoint protection</td>
             </tr>
             <tr>
-              <td><strong>Usability Score</strong><br><span style="color:var(--amber);font-size:.75rem">Survey Import</span></td>
-              <td>Ease of Use + Support + UX</td>
-              <td><span class="pts-badge amber">2.0 pts</span></td>
-              <td style="color:var(--text-muted);font-size:.78rem">Imported from public Google Forms survey responses — no user input collected on this website</td>
+              <td rowspan="3"><strong>Performance Impact</strong><br><span style="color:var(--amber);font-size:.75rem">40% — Automated</span></td>
+              <td>CPU Peak / Average</td>
+              <td><span class="pts-badge amber">1.5 pts</span></td>
+              <td style="color:var(--text-muted);font-size:.78rem">Starts at 1.5, deducted by CPU overhead during tests</td>
+            </tr>
+            <tr>
+              <td>RAM Consumption</td>
+              <td><span class="pts-badge amber">1.5 pts</span></td>
+              <td style="color:var(--text-muted);font-size:.78rem">Starts at 1.5, deducted by peak RAM usage (MB)</td>
+            </tr>
+            <tr>
+              <td>Disk I/O / Latency</td>
+              <td><span class="pts-badge amber">1.0 pt</span></td>
+              <td style="color:var(--text-muted);font-size:.78rem">Starts at 1.0, deducted by disk write overhead (MB)</td>
             </tr>
             <tr style="background:rgba(0,230,118,.04)">
-              <td><strong>Grand Total</strong></td>
-              <td>Physical + Usability</td>
+              <td><strong>Total Score</strong></td>
+              <td>Detection + Performance</td>
               <td><span class="pts-badge total">10.0 pts</span></td>
-              <td style="color:var(--text-muted);font-size:.78rem">Used in final AV product comparison</td>
+              <td style="color:var(--text-muted);font-size:.78rem">Fully automated — measured by the benchmark tool</td>
             </tr>
           </tbody>
         </table>
 
         <div class="formula-box">
-          <div><span class="formula-key">Detection Score</span> = EICAR(0 or 0.5) + GoPhish(0 or 1.5) + Atomic_sub_tests_detected × 0.6</div>
-          <div style="color:rgba(122,143,166,.7);font-size:.72rem;padding-left:1em">e.g. EICAR✓ + GoPhish✓ + 3/5 ATT&amp;CK = 0.5 + 1.5 + 1.8 = 3.8 / 5.0</div>
-          <div><span class="formula-key">Performance Score</span> = max(0, 3.0 − cpu_avg×0.010 − ram_peak_mb×0.002 − disk_write_mb×0.001)</div>
-          <div><span class="formula-key">Physical Total</span> = Detection Score + Performance Score  <span style="color:var(--text-muted)">[max 8.0]</span></div>
-          <div><span class="formula-key">Grand Total</span> = Physical Total + Usability Score  <span style="color:var(--text-muted)">[max 10.0]</span></div>
-          <div style="margin-top:6px;color:rgba(122,143,166,.7);font-size:.72rem">ABAE is supplementary — shown as PASS/FAIL only, not counted in the score</div>
+          <div><span class="formula-key">Detection Score</span> = EICAR(0/1.0) + GoPhish(0/1.0) + Atomic_sub_tests × (2.0/N) + ABAE_sub_tests × (2.0/N)</div>
+          <div style="color:rgba(122,143,166,.7);font-size:.72rem;padding-left:1em">e.g. EICAR✓ + GoPhish✓ + 3/5 Atomic + 4/6 ABAE = 1.0 + 1.0 + 1.2 + 1.33 = 4.53 / 6.0</div>
+          <div><span class="formula-key">Performance Score</span> = CPU_sub(1.5 max) + RAM_sub(1.5 max) + Disk_sub(1.0 max)</div>
+          <div><span class="formula-key">Total Score</span> = Detection Score + Performance Score  <span style="color:var(--text-muted)">[max 10.0]</span></div>
         </div>
 
         <p style="font-size:.74rem;color:var(--text-muted);margin-top:12px">
-          ⚠️ Score thresholds: <span style="color:var(--green)">≥ 6.0</span> = Good &nbsp;|&nbsp;
-          <span style="color:var(--amber)">4.0 – 5.99</span> = Average &nbsp;|&nbsp;
-          <span style="color:var(--red)">&lt; 4.0</span> = Poor &nbsp;(Physical Total scale)
+          ⚠️ Score thresholds: <span style="color:var(--green)">≥ 7.0</span> = Good &nbsp;|&nbsp;
+          <span style="color:var(--amber)">5.0 – 6.99</span> = Average &nbsp;|&nbsp;
+          <span style="color:var(--red)">&lt; 5.0</span> = Poor
         </p>
       </div>
     </div>
@@ -1164,15 +1106,13 @@
               <tr>
                 <th>#</th>
                 <th>AV Product</th>
-                <th>Physical Total ↕</th>
+                <th>Total Score ↕</th>
                 <th>Detection</th>
                 <th>Performance</th>
                 <th>EICAR</th>
                 <th>GoPhish</th>
                 <th>Atomic</th>
                 <th>ABAE</th>
-                <th>ABAE Verdict</th>
-                <th>Best Latency (s)</th>
                 <th>CPU Avg %</th>
                 <th>RAM Peak (MB)</th>
                 <th>Disk Write (MB)</th>
@@ -1188,52 +1128,7 @@
       </div>
     </section>
 
-    <div class="section-divider"></div>
 
-    <!-- USABILITY SCORE / GOOGLE FORMS SECTION -->
-    <section id="usability-section" style="margin-top:28px">
-      <p class="section-label">User Satisfaction — Usability Score (2 pts) &nbsp;·&nbsp; Google Forms Import</p>
-      <div class="panel">
-        <div class="panel-header">
-          <span class="panel-title">📋 User Satisfaction Results</span>
-          <span style="font-size:.75rem;color:var(--text-muted)">Source: Public Google Forms Survey</span>
-        </div>
-        <div class="panel-body">
-          <div class="import-banner">
-            <span class="import-icon">📥</span>
-            <div>
-              <strong>Data Import Only — No User Input Collected on This Website</strong><br>
-              Usability scores are collected via a publicly distributed Google Forms survey and imported here as a read-only
-              dataset. Respondents rate each AV product on ease of use, support quality, and overall satisfaction.
-              The resulting 2-point usability component is then added to the Physical Score (8 pts) to produce the Grand Total (10 pts).
-            </div>
-          </div>
-
-          <table class="usability-table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>AV Product</th>
-                <th>Ease of Use (/ 5)</th>
-                <th>Support Quality (/ 5)</th>
-                <th>Overall Satisfaction (/ 5)</th>
-                <th>Usability Score (/ 2.0)</th>
-                <th>Responses</th>
-              </tr>
-            </thead>
-            <tbody id="usability-body">
-              <tr>
-                <td colspan="7" style="text-align:center;padding:28px;color:var(--text-muted);font-size:.82rem">
-                  <span class="pending-chip">⏳ Awaiting Google Forms data import</span>
-                  <br><br>
-                  Survey data will appear here once the Google Forms responses are exported and imported.
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </section>
 
   </div><!-- /page-wrap -->
 
@@ -1268,8 +1163,8 @@
 
     /* ── Helpers ─────────────────────────────────────────────── */
     function scoreClass(v) {
-      if (v >= 6) return 'badge-green';
-      if (v >= 4) return 'badge-amber';
+      if (v >= 7) return 'badge-green';
+      if (v >= 5) return 'badge-amber';
       return 'badge-red';
     }
 
@@ -1324,7 +1219,7 @@
         const scoreColor = cls === 'badge-green' ? 'var(--green)'
           : cls === 'badge-amber' ? 'var(--amber)'
             : 'var(--red)';
-        const barPct = Math.min(100, ((av.avg_score ?? 0) / 8) * 100).toFixed(1);
+        const barPct = Math.min(100, ((av.avg_score ?? 0) / 10) * 100).toFixed(1);
         const rankLabel = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`;
         const abaeVerdict = av.abae_verdict ?? null;
         const abaeBadge = abaeVerdict
@@ -1338,7 +1233,7 @@
           </div>
           <div class="score-ring">
             <span class="score-big" style="color:${scoreColor}">${av.avg_score ?? '—'}</span>
-            <span class="score-label">Avg Score / 8.00</span>
+            <span class="score-label">Avg Score / 10.00</span>
             <div class="score-bar-wrap" style="width:100%;margin-top:8px">
               <div class="score-bar" style="width:${barPct}%;background:${scoreColor}"></div>
             </div>
@@ -1380,8 +1275,6 @@
         <td>${detectBadge(r.gophish_detected)}</td>
         <td>${detectBadge(r.atomic_detected)}</td>
         <td>${detectBadge(r.abae_detected)}</td>
-        <td style="font-size:.75rem;color:var(--text-muted)">${r.abae_verdict ?? '—'}</td>
-        <td style="font-family:var(--mono)">${r.best_detection_latency_s != null ? r.best_detection_latency_s.toFixed(2) : '—'}</td>
         <td style="font-family:var(--mono)">${r.cpu_avg != null ? r.cpu_avg.toFixed(1) + '%' : '—'}</td>
         <td style="font-family:var(--mono)">${r.ram_peak_mb != null ? r.ram_peak_mb.toFixed(1) : '—'}</td>
         <td style="font-family:var(--mono)">${r.disk_write_mb != null ? r.disk_write_mb.toFixed(2) : '—'}</td>
@@ -1563,8 +1456,8 @@
         title.textContent = `${r.av_name}`;
         meta.textContent = `${r.run_id}  ·  ${fmtDate(r.timestamp)}`;
 
-        const physPct = Math.min(100, ((r.physical_total ?? 0) / 8) * 100).toFixed(1);
-        const physCls = r.physical_total >= 6 ? 'var(--green)' : r.physical_total >= 4 ? 'var(--amber)' : 'var(--red)';
+        const physPct = Math.min(100, ((r.physical_total ?? 0) / 10) * 100).toFixed(1);
+        const physCls = r.physical_total >= 7 ? 'var(--green)' : r.physical_total >= 5 ? 'var(--amber)' : 'var(--red)';
 
         // ── Scores section ───────────────────────────────────
         let out = `
@@ -1572,13 +1465,13 @@
           <h4>Scores</h4>
           <div class="modal-grid">
             <div class="modal-stat">
-              <div class="val" style="color:${physCls}">${r.physical_total?.toFixed(2) ?? '—'} / 8.00</div>
-              <div class="key">Physical Total</div>
+              <div class="val" style="color:${physCls}">${r.physical_total?.toFixed(2) ?? '—'} / 10.00</div>
+              <div class="key">Total Score</div>
               <div class="score-bar-wrap"><div class="score-bar" style="width:${physPct}%;background:${physCls}"></div></div>
             </div>
-            <div class="modal-stat"><div class="val">${r.detection_score?.toFixed(2) ?? '—'} / 5.00</div><div class="key">Detection Score</div></div>
-            <div class="modal-stat"><div class="val">${r.performance_score?.toFixed(2) ?? '—'} / 3.00</div><div class="key">Performance Score</div></div>
-            <div class="modal-stat"><div class="val">${r.best_detection_latency_s != null ? r.best_detection_latency_s.toFixed(2) + 's' : 'N/A'}</div><div class="key">Best Detection Latency</div></div>
+            <div class="modal-stat"><div class="val">${r.detection_score?.toFixed(2) ?? '—'} / 6.00</div><div class="key">Detection Score</div></div>
+            <div class="modal-stat"><div class="val">${r.performance_score?.toFixed(2) ?? '—'} / 4.00</div><div class="key">Performance Score</div></div>
+            <div class="modal-stat"><div class="val">${r.abae_verdict ?? '—'}</div><div class="key">ABAE Verdict</div></div>
           </div>
         </div>`;
 
@@ -1590,7 +1483,6 @@
             <div class="modal-stat"><div class="val">${r.cpu_avg?.toFixed(1) ?? '—'}%</div><div class="key">CPU Average</div></div>
             <div class="modal-stat"><div class="val">${r.ram_peak_mb?.toFixed(1) ?? '—'} MB</div><div class="key">RAM Peak</div></div>
             <div class="modal-stat"><div class="val">${r.disk_write_mb?.toFixed(2) ?? '—'} MB</div><div class="key">Disk Write</div></div>
-            <div class="modal-stat"><div class="val">${r.abae_verdict ?? '—'}</div><div class="key">ABAE Verdict</div></div>
           </div>
         </div>`;
 
@@ -1651,7 +1543,7 @@
       if (!allResults.length) return;
       const cols = ['run_id', 'av_name', 'physical_total', 'detection_score', 'performance_score',
         'eicar_detected', 'gophish_detected', 'atomic_detected', 'abae_detected',
-        'abae_verdict', 'best_detection_latency_s', 'cpu_avg', 'ram_peak_mb', 'disk_write_mb', 'timestamp'];
+        'cpu_avg', 'ram_peak_mb', 'disk_write_mb', 'timestamp'];
       const header = cols.join(',');
       const rows = allResults.map(r => cols.map(c => JSON.stringify(r[c] ?? '')).join(','));
       const csv = [header, ...rows].join('\n');

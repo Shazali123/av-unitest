@@ -301,28 +301,26 @@ class ResultsHandler:
 
         output.append("=" * 62)
 
-        # === PHYSICAL SCORE ===
+        # === TOTAL SCORE (10-Point System) ===
         scores = calculate_scores(module_results)
         bd     = scores.get('breakdown', {})
         output.append("")
         output.append("=" * 62)
-        output.append("  PHYSICAL SCORE  (Detection 50% + Performance 30%)")
+        output.append("  SCORING  (Detection 60% + Performance 40%)")
         output.append("-" * 62)
-        output.append(f"  Detection Score   : {scores['detection_score']:>5.2f} / 5.00")
-        output.append(f"    Modules detected   : {bd.get('detected_count',0)}/{bd.get('total_modules',0)}"
-                      f"  (+{bd.get('rate_score',0):.2f} pts)")
-        best_lat = bd.get('best_latency_s')
-        if best_lat is not None:
-            output.append(f"    Best latency       : {best_lat:.2f}s  (+{bd.get('speed_score',0):.2f} pts)")
-        else:
-            output.append(f"    Best latency       : N/A  (+0.00 pts — no detection recorded)")
-        output.append(f"  Performance Score : {scores['performance_score']:>5.2f} / 3.00")
-        output.append(f"    CPU avg            : {bd.get('agg_cpu_avg',0):.1f}%")
-        output.append(f"    RAM peak           : {bd.get('agg_ram_peak_mb',0):.1f} MB")
-        output.append(f"    Disk write         : {bd.get('agg_disk_write_mb',0):.1f} MB")
+        output.append(f"  Detection Score   : {scores['detection_score']:>5.2f} / 6.00")
+        output.append(f"    EICAR (Layer 1)    : {bd.get('eicar_score',0):.2f} / 1.00")
+        output.append(f"    GoPhish (Layer 2)  : {bd.get('gophish_score',0):.2f} / 1.00")
+        output.append(f"    Atomic (Layer 3)   : {bd.get('atomic_score',0):.2f} / 2.00"
+                      f"  ({bd.get('atomic_detected',0)}/{bd.get('atomic_total',0)} sub-tests)")
+        output.append(f"    ABAE (Layer 4)     : {bd.get('abae_score',0):.2f} / 2.00"
+                      f"  ({bd.get('abae_detected',0)}/{bd.get('abae_total',0)} sub-tests)")
+        output.append(f"  Performance Score : {scores['performance_score']:>5.2f} / 4.00")
+        output.append(f"    CPU Peak/Avg       : {bd.get('agg_cpu_avg',0):.1f}%  → {bd.get('cpu_sub_score',0):.2f} / 1.50")
+        output.append(f"    RAM Consumption    : {bd.get('agg_ram_peak_mb',0):.1f} MB  → {bd.get('ram_sub_score',0):.2f} / 1.50")
+        output.append(f"    Disk I/O           : {bd.get('agg_disk_write_mb',0):.1f} MB  → {bd.get('disk_sub_score',0):.2f} / 1.00")
         output.append(f"  {'─' * 38}")
-        output.append(f"  Physical Total    : {scores['physical_total']:>5.2f} / 8.00")
-        output.append(f"  (Usability 2.00 pts scored separately by comparison website)")
+        output.append(f"  Total Score       : {scores['total_score']:>5.2f} / 10.00")
         output.append("=" * 62)
 
         return "\n".join(output)
@@ -389,7 +387,7 @@ class ResultsHandler:
         payload = self.build_upload_payload(module_results, av_name)
         run_id  = payload['run_id']
 
-        print(f"[Upload] Physical Score: {payload['physical_total']:.2f}/8.00")
+        print(f"[Upload] Total Score: {payload['physical_total']:.2f}/10.00")
         print(f"[Upload] Uploading run '{run_id}' to {server_url} ...")
 
         try:
