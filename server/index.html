@@ -1118,7 +1118,7 @@
         🛡️ <strong>Your antivirus may flag this tool</strong> —
         AV-Unitest simulates attack techniques to test your AV.
         This is intentional and safe.
-        <a href="#how-to-whitelist">How to whitelist →</a>
+        <a href="#how-to-whitelist" style="display:block;margin-top:4px">For the most accurate results, it is highly recommended to exempt the executable prior to running, as the benchmark utilizes simulated attack payloads.</a>
       </div>
       <div class="disclaimer-callout">
         ⚠️ <strong>Disclaimer:</strong> We strongly recommend running AV-Unitest on
@@ -1126,10 +1126,7 @@
       </div>
     </section>
 
-    <!-- SECTION: GLOBAL RESULTS -->
-    <div class="section-divider">
-      📊 <span>Global Results Dashboard</span>
-    </div>
+    <!-- SECTION: RESULTS DASHBOARD -->
 
     <!-- Alert if API unreachable -->
     <div id="alert-banner">
@@ -1234,8 +1231,6 @@
         </div>
       </div>
     </section>
-
-    <div class="section-divider"></div>
 
     <!-- TABLE PANEL -->
     <section id="table-section">
@@ -1361,8 +1356,8 @@
     /* ── Summary Cards ───────────────────────────────────────── */
     function renderSummary(summary) {
       const grid = document.getElementById('summary-grid');
-      if (!summary.length) {
-        grid.innerHTML = '<p style="color:var(--text-muted);font-size:.85rem">No data yet.</p>';
+      if (!summary || !summary.length) {
+        grid.innerHTML = '<p style="color:var(--text-muted);font-size:.85rem;padding:20px">No data yet. Run the benchmark and upload results.</p>';
         return;
       }
       // Sort high → low by avg_score
@@ -1421,7 +1416,7 @@
       <tr data-runid="${r.run_id}">
         <td>${i + 1}</td>
         <td><span class="av-chip">🛡 ${r.av_name}</span></td>
-        <td>${scoreBadge(r.physical_total)}</td>
+        <td>${scoreBadge(r.total_score)}</td>
         <td>${scoreBadge(r.detection_score)}</td>
         <td>${scoreBadge(r.performance_score)}</td>
         <td>${detectBadge(r.eicar_detected)}</td>
@@ -1454,6 +1449,7 @@
     /* ── AV Filter ───────────────────────────────────────────── */
     function populateFilter(avs) {
       const sel = document.getElementById('filter-select');
+      if (!avs || !Array.isArray(avs)) return;
       avs.forEach(av => {
         const opt = document.createElement('option');
         opt.value = av; opt.textContent = av;
@@ -1462,8 +1458,8 @@
       sel.addEventListener('change', async () => {
         const q = sel.value ? `?av=${encodeURIComponent(sel.value)}` : '';
         const data = await apiFetch(`/results${q}`);
-        renderTable(data.results);
-        allResults = data.results;
+        renderTable(data);
+        allResults = data;
       });
     }
 
@@ -1609,8 +1605,8 @@
         title.textContent = `${r.av_name}`;
         meta.textContent = `${r.run_id}  ·  ${fmtDate(r.timestamp)}`;
 
-        const physPct = Math.min(100, ((r.physical_total ?? 0) / 10) * 100).toFixed(1);
-        const physCls = r.physical_total >= 7 ? 'var(--green)' : r.physical_total >= 5 ? 'var(--amber)' : 'var(--red)';
+        const physPct = Math.min(100, ((r.total_score ?? 0) / 10) * 100).toFixed(1);
+        const physCls = r.total_score >= 7 ? 'var(--green)' : r.total_score >= 5 ? 'var(--amber)' : 'var(--red)';
 
         // ── Scores section ───────────────────────────────────
         let out = `
@@ -1618,7 +1614,7 @@
           <h4>Scores</h4>
           <div class="modal-grid">
             <div class="modal-stat">
-              <div class="val" style="color:${physCls}">${r.physical_total?.toFixed(2) ?? '—'} / 10.00</div>
+              <div class="val" style="color:${physCls}">${r.total_score?.toFixed(2) ?? '—'} / 10.00</div>
               <div class="key">Total Score</div>
               <div class="score-bar-wrap"><div class="score-bar" style="width:${physPct}%;background:${physCls}"></div></div>
             </div>
@@ -1640,10 +1636,10 @@
         </div>`;
 
         // ── Per-module panels ────────────────────────────────
-        if (Array.isArray(r.raw_json) && r.raw_json.length) {
+        if (Array.isArray(r.module_results) && r.module_results.length) {
           out += `<div class="modal-section"><h4>Module Details (click to expand)</h4>`;
 
-          r.raw_json.forEach((mod, idx) => {
+          r.module_results.forEach((mod, idx) => {
             const modName = mod.name ?? mod.module_id ?? `Module ${idx + 1}`;
             const metaTxt = `Exec: ${mod.execution_time ?? '?'}s  ·  Status: ${mod.status ?? '?'}`;
             const badge = detectBadge(mod.detected);
@@ -1694,7 +1690,7 @@
     /* ── Export CSV ──────────────────────────────────────────── */
     document.getElementById('export-btn').addEventListener('click', () => {
       if (!allResults.length) return;
-      const cols = ['run_id', 'av_name', 'physical_total', 'detection_score', 'performance_score',
+      const cols = ['run_id', 'av_name', 'total_score', 'detection_score', 'performance_score',
         'eicar_detected', 'gophish_detected', 'atomic_detected', 'abae_detected',
         'cpu_avg', 'ram_peak_mb', 'disk_write_mb', 'timestamp'];
       const header = cols.join(',');
@@ -1714,17 +1710,17 @@
       try {
         const [summaryData, resultsData, avsData] = await Promise.all([
           apiFetch('/summary'),
-          apiFetch('/results?sort=physical_total&order=desc'),
+          apiFetch('/results?sort=total_score&order=desc'),
           apiFetch('/avs'),
         ]);
 
-        allResults = resultsData.results;
-        renderSummary(summaryData.summary);
+        allResults = resultsData || [];
+        renderSummary(summaryData || []);
         renderTable(allResults);
 
         // Rebuild AV filter only on first load
-        if (document.getElementById('filter-select').options.length === 1) {
-          populateFilter(avsData.avs);
+        if (document.getElementById('filter-select').options.length === 1 && avsData && avsData.length > 0) {
+          populateFilter(avsData);
         }
 
         const now = new Date().toLocaleTimeString();

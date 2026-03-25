@@ -14,7 +14,7 @@ Tests your antivirus across 4 layers:
   4. Behavioral anomaly detection (ABAE)
 
 Results upload automatically to the public dashboard:
-  https://av-unitest.onrender.com
+  https://shazali123.pythonanywhere.com
 
 !! DISCLAIMER !!
 -----------------

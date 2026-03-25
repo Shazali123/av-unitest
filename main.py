@@ -54,7 +54,7 @@ class BenchmarkApp(ctk.CTk):
     """Main application window"""
 
     # --- Server config ---
-    SERVER_URL = "https://av-unitest.onrender.com/api/upload"
+    SERVER_URL = "https://shazali123.pythonanywhere.com/api/upload"
 
     def __init__(self):
         super().__init__()

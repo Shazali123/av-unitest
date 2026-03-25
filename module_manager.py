@@ -21,7 +21,13 @@ class ModuleManager:
         Args:
             modules_dir: Directory containing module folders
         """
-        self.modules_dir = modules_dir
+        if getattr(sys, 'frozen', False):
+            # Running as a bundled PyInstaller executable
+            self.modules_dir = os.path.join(sys._MEIPASS, modules_dir)
+        else:
+            # Running as normal script
+            self.modules_dir = os.path.abspath(modules_dir)
+            
         self.modules: List = []
         self.results: List[Dict] = []
         self._config = self._load_config()

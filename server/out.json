@@ -1,0 +1,326 @@
+{
+  "abae_detected": 1,
+  "abae_verdict": "FAIL",
+  "atomic_detected": 1,
+  "av_name": "Windows Defender",
+  "breakdown": {
+    "abae_detected": 1,
+    "abae_score": 0.33,
+    "abae_total": 6,
+    "abae_verdict": "FAIL",
+    "agg_cpu_avg": 7.43,
+    "agg_cpu_peak": 100.0,
+    "agg_disk_write_mb": 191.36,
+    "agg_ram_peak_mb": 221.3,
+    "atomic_detected": 3,
+    "atomic_score": 1.2,
+    "atomic_total": 5,
+    "cpu_sub_score": 1.39,
+    "disk_sub_score": 0.62,
+    "eicar_detected": true,
+    "eicar_score": 1.0,
+    "gophish_detected": true,
+    "gophish_score": 1.0,
+    "ram_sub_score": 0.84
+  },
+  "breakdown_json": "{\"eicar_detected\": true, \"eicar_score\": 1.0, \"gophish_detected\": true, \"gophish_score\": 1.0, \"atomic_detected\": 3, \"atomic_total\": 5, \"atomic_score\": 1.2, \"abae_detected\": 1, \"abae_total\": 6, \"abae_score\": 0.33, \"abae_verdict\": \"FAIL\", \"agg_cpu_avg\": 7.43, \"agg_cpu_peak\": 100.0, \"agg_ram_peak_mb\": 221.3, \"agg_disk_write_mb\": 191.36, \"cpu_sub_score\": 1.39, \"ram_sub_score\": 0.84, \"disk_sub_score\": 0.62}",
+  "client_ip": "10.0.5.156",
+  "cpu_avg": 7.43,
+  "detection_score": 3.53,
+  "disk_write_mb": 191.36,
+  "eicar_detected": 1,
+  "gophish_detected": 1,
+  "id": 2,
+  "module_results": [
+    {
+      "detected": true,
+      "detection_notes": "AV removed or neutralised the EICAR file (near-instant)",
+      "detection_verdict": "DETECTED",
+      "execution_time": 0.1,
+      "metrics": {
+        "cpu_avg": 0.0,
+        "cpu_peak": 0.0,
+        "detection_time": 0.03,
+        "disk_read_mb": 0.0,
+        "disk_write_mb": 0.01,
+        "ram_avg": 0.0,
+        "ram_peak": 0.0
+      },
+      "module_id": 1,
+      "name": "EICAR Test",
+      "status": "Completed"
+    },
+    {
+      "detected": true,
+      "execution_time": 18.17,
+      "gophish_results": {
+        "block_reason": "AV terminated executed payload (L2)",
+        "campaign_id": 106,
+        "campaign_status": "Queued",
+        "clicks_recorded": 1,
+        "cred_submit_success": false,
+        "escalation": {
+          "level_0_html": {
+            "detected": false
+          },
+          "level_1_ps1": {
+            "detected": false
+          },
+          "level_2_execute": {
+            "detected": true,
+            "latency_s": 0.3,
+            "note": "process killed/file deleted"
+          },
+          "level_3_lol": {
+            "blocked": true,
+            "detail": "IWR failed (rc=1): Invoke-WebRequest : 404 page not found\nAt line:1 char:41\n+ ... yContinue'; Invoke-WebRequest -Uri 'http://192.168.1.121:8081' -OutFi ...\n+                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n    + CategoryInfo          : InvalidOperation: (System.Net.HttpWebRequest:HttpWebReque",
+            "latency_s": 0.0
+          },
+          "triggered_level": 2
+        },
+        "mode": "Live",
+        "phish_page_blocked": true,
+        "phish_url": "http://192.168.1.121:8081",
+        "phish_url_accessible": false,
+        "submitted_recorded": 0,
+        "verdict_reason": "Detected via L2 \u2014 PowerShell execution terminated. AV terminated executed payload (L2)"
+      },
+      "metrics": {
+        "cpu_avg": 4.6,
+        "cpu_peak": 24.1,
+        "detection_time": null,
+        "disk_read_mb": 1.94,
+        "disk_write_mb": 68.14,
+        "ram_avg": 68.22,
+        "ram_peak": 155.94
+      },
+      "module_id": 2,
+      "name": "GoPhish Simulation",
+      "offline_demo": false,
+      "status": "Completed"
+    },
+    {
+      "detected": true,
+      "execution_time": 9.44,
+      "metrics": {
+        "cpu_avg": 8.5,
+        "cpu_peak": 23.5,
+        "detection_time": 0.35,
+        "disk_read_mb": 0.56,
+        "disk_write_mb": 13.41,
+        "ram_avg": 41.68,
+        "ram_peak": 93.71
+      },
+      "module_id": 3,
+      "name": "Atomic Red Team",
+      "status": "Completed",
+      "test_results": [
+        {
+          "detail": "PowerShell payload executed (rc=0, marker_written=True)",
+          "detected": false,
+          "elapsed": 0.16,
+          "name": "PowerShell Execution",
+          "test": "T1059.001  PowerShell Execution",
+          "tid": "T1059.001"
+        },
+        {
+          "detail": "Dump blocked (rc=-1, file_exists=False)",
+          "detected": true,
+          "elapsed": 0.18,
+          "name": "LSASS Memory Dump",
+          "test": "T1003.001  LSASS Memory Dump",
+          "tid": "T1003.001"
+        },
+        {
+          "detail": "rundll32 LOLBin blocked (rc=-1)",
+          "detected": true,
+          "elapsed": 0.01,
+          "name": "Signed Binary Proxy (Rundll32 LOLBin)",
+          "test": "T1218.011  Signed Binary Proxy (Rundll32 LOLBin)",
+          "tid": "T1218.011"
+        },
+        {
+          "detail": "EICAR .exe not quarantined \u2014 AV did not detect",
+          "detected": false,
+          "elapsed": 2.74,
+          "name": "Ingress Tool Transfer (EICAR .exe)",
+          "test": "T1105  Ingress Tool Transfer (EICAR .exe)",
+          "tid": "T1105"
+        },
+        {
+          "detail": "Staging/exfil chain flagged (file_ok=True, exfil_blocked=True)",
+          "detected": true,
+          "elapsed": 6.25,
+          "name": "System Discovery + Exfil Simulation",
+          "test": "T1082  System Discovery + Exfil Simulation",
+          "tid": "T1082"
+        }
+      ]
+    },
+    {
+      "abae_verdict": "FAIL",
+      "detected": true,
+      "execution_time": 61.28,
+      "metrics": {
+        "cpu_avg": 16.6,
+        "cpu_peak": 100.0,
+        "detection_time": 61.25,
+        "disk_read_mb": 9.17,
+        "disk_write_mb": 109.8,
+        "ram_avg": 79.69,
+        "ram_peak": 221.3
+      },
+      "module_id": 4,
+      "name": "ABAE Behavioral Engine",
+      "status": "Completed",
+      "test_results": [
+        {
+          "detail": "PS1 payload completed cleanly. Sentinel \u2713, rc=0, stages 4/4, file intact, no AV events.",
+          "detected": false,
+          "detection_latency": 0.0,
+          "elapsed": 9.33,
+          "extra": {
+            "defender_events": 0,
+            "file_quarantined": false,
+            "file_wiped": false,
+            "mode": "powershell_amsi_v5",
+            "payload": "abae_payload_b01.ps1",
+            "returncode": 0,
+            "sentinel_ok": true,
+            "stages_expected": 4,
+            "stages_found": 4,
+            "stages_missing": 0,
+            "stderr_tail": "",
+            "vendor_events": 0
+          },
+          "name": "Ransomware File Churn (AMSI)",
+          "test": "B-01  Ransomware File Churn (AMSI)",
+          "tid": "B-01"
+        },
+        {
+          "detail": "PS1 payload completed cleanly. Sentinel \u2713, rc=0, stages 3/3, file intact, no AV events.",
+          "detected": false,
+          "detection_latency": 0.0,
+          "elapsed": 9.17,
+          "extra": {
+            "defender_events": 0,
+            "file_quarantined": false,
+            "file_wiped": false,
+            "mode": "powershell_amsi_v5",
+            "payload": "abae_payload_b02.ps1",
+            "returncode": 0,
+            "sentinel_ok": true,
+            "stages_expected": 3,
+            "stages_found": 3,
+            "stages_missing": 0,
+            "stderr_tail": "",
+            "vendor_events": 0
+          },
+          "name": "Entropy Storm / XOR Cipher (AMSI)",
+          "test": "B-02  Entropy Storm / XOR Cipher (AMSI)",
+          "tid": "B-02"
+        },
+        {
+          "detail": "PS1 payload completed cleanly. Sentinel \u2713, rc=0, stages 4/4, file intact, no AV events.",
+          "detected": false,
+          "detection_latency": 0.0,
+          "elapsed": 11.83,
+          "extra": {
+            "defender_events": 0,
+            "file_quarantined": false,
+            "file_wiped": false,
+            "mode": "powershell_amsi_v5",
+            "payload": "abae_payload_b03.ps1",
+            "returncode": 0,
+            "sentinel_ok": true,
+            "stages_expected": 4,
+            "stages_found": 4,
+            "stages_missing": 0,
+            "stderr_tail": "",
+            "vendor_events": 0
+          },
+          "name": "Process Chain + Invoke-Expression (AMSI)",
+          "test": "B-03  Process Chain + Invoke-Expression (AMSI)",
+          "tid": "B-03"
+        },
+        {
+          "detail": "PS1 payload completed cleanly. Sentinel \u2713, rc=0, stages 5/5, file intact, no AV events.",
+          "detected": false,
+          "detection_latency": 0.0,
+          "elapsed": 8.87,
+          "extra": {
+            "defender_events": 0,
+            "file_quarantined": false,
+            "file_wiped": false,
+            "mode": "powershell_amsi_v5",
+            "payload": "abae_payload_b04.ps1",
+            "returncode": 0,
+            "sentinel_ok": true,
+            "stages_expected": 5,
+            "stages_found": 5,
+            "stages_missing": 0,
+            "stderr_tail": "",
+            "vendor_events": 0
+          },
+          "name": "Registry Persistence + Storm (AMSI)",
+          "test": "B-04  Registry Persistence + Storm (AMSI)",
+          "tid": "B-04"
+        },
+        {
+          "detail": "[L2] Surgical child-process termination detected. Sentinel present but 2/6 stage(s) missing. Found stages: ['stage1_certutil_encode_decode', 'stage2_mshta_vbscript', 'stage3_iex_base64', 'stage4_bitsadmin_transfer']",
+          "detected": true,
+          "detection_latency": 12.096,
+          "elapsed": 12.1,
+          "extra": {
+            "defender_events": 15,
+            "file_quarantined": false,
+            "file_wiped": false,
+            "mode": "powershell_amsi_v5",
+            "payload": "abae_payload_b05.ps1",
+            "returncode": 0,
+            "sentinel_ok": true,
+            "stages_expected": 6,
+            "stages_found": 4,
+            "stages_missing": 2,
+            "stderr_tail": "",
+            "vendor_events": 0
+          },
+          "name": "LOLBIN + AMSI String Triggers",
+          "test": "B-05  LOLBIN + AMSI String Triggers",
+          "tid": "B-05"
+        },
+        {
+          "detail": "PS1 payload completed cleanly. Sentinel \u2713, rc=0, stages 4/4, file intact, no AV events.",
+          "detected": false,
+          "detection_latency": 0.0,
+          "elapsed": 9.91,
+          "extra": {
+            "defender_events": 0,
+            "file_quarantined": false,
+            "file_wiped": false,
+            "mode": "powershell_amsi_v5",
+            "payload": "abae_payload_b06.ps1",
+            "returncode": 0,
+            "sentinel_ok": true,
+            "stages_expected": 4,
+            "stages_found": 4,
+            "stages_missing": 0,
+            "stderr_tail": "",
+            "vendor_events": 0
+          },
+          "name": "Concurrent Runspace Storm (AMSI)",
+          "test": "B-06  Concurrent Runspace Storm (AMSI)",
+          "tid": "B-06"
+        }
+      ]
+    }
+  ],
+  "os_info": "Windows-11-10.0.26200-SP0",
+  "performance_score": 2.84,
+  "ram_peak_mb": 221.3,
+  "results_json": "[{\"module_id\": 1, \"name\": \"EICAR Test\", \"execution_time\": 0.1, \"status\": \"Completed\", \"detected\": true, \"detection_verdict\": \"DETECTED\", \"detection_notes\": \"AV removed or neutralised the EICAR file (near-instant)\", \"metrics\": {\"cpu_avg\": 0.0, \"cpu_peak\": 0.0, \"ram_avg\": 0.0, \"ram_peak\": 0.0, \"disk_read_mb\": 0.0, \"disk_write_mb\": 0.01, \"detection_time\": 0.03}}, {\"module_id\": 2, \"name\": \"GoPhish Simulation\", \"execution_time\": 18.17, \"status\": \"Completed\", \"detected\": true, \"offline_demo\": false, \"gophish_results\": {\"mode\": \"Live\", \"campaign_id\": 106, \"campaign_status\": \"Queued\", \"phish_url\": \"http://192.168.1.121:8081\", \"phish_url_accessible\": false, \"phish_page_blocked\": true, \"block_reason\": \"AV terminated executed payload (L2)\", \"cred_submit_success\": false, \"clicks_recorded\": 1, \"submitted_recorded\": 0, \"verdict_reason\": \"Detected via L2 \\u2014 PowerShell execution terminated. AV terminated executed payload (L2)\", \"escalation\": {\"level_0_html\": {\"detected\": false}, \"level_1_ps1\": {\"detected\": false}, \"level_2_execute\": {\"detected\": true, \"latency_s\": 0.3, \"note\": \"process killed/file deleted\"}, \"triggered_level\": 2, \"level_3_lol\": {\"blocked\": true, \"detail\": \"IWR failed (rc=1): Invoke-WebRequest : 404 page not found\\nAt line:1 char:41\\n+ ... yContinue'; Invoke-WebRequest -Uri 'http://192.168.1.121:8081' -OutFi ...\\n+                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\\n    + CategoryInfo          : InvalidOperation: (System.Net.HttpWebRequest:HttpWebReque\", \"latency_s\": 0.0}}}, \"metrics\": {\"cpu_avg\": 4.6, \"cpu_peak\": 24.1, \"ram_avg\": 68.22, \"ram_peak\": 155.94, \"disk_read_mb\": 1.94, \"disk_write_mb\": 68.14, \"detection_time\": null}}, {\"module_id\": 3, \"name\": \"Atomic Red Team\", \"execution_time\": 9.44, \"status\": \"Completed\", \"detected\": true, \"test_results\": [{\"test\": \"T1059.001  PowerShell Execution\", \"tid\": \"T1059.001\", \"name\": \"PowerShell Execution\", \"detected\": false, \"detail\": \"PowerShell payload executed (rc=0, marker_written=True)\", \"elapsed\": 0.16}, {\"test\": \"T1003.001  LSASS Memory Dump\", \"tid\": \"T1003.001\", \"name\": \"LSASS Memory Dump\", \"detected\": true, \"detail\": \"Dump blocked (rc=-1, file_exists=False)\", \"elapsed\": 0.18}, {\"test\": \"T1218.011  Signed Binary Proxy (Rundll32 LOLBin)\", \"tid\": \"T1218.011\", \"name\": \"Signed Binary Proxy (Rundll32 LOLBin)\", \"detected\": true, \"detail\": \"rundll32 LOLBin blocked (rc=-1)\", \"elapsed\": 0.01}, {\"test\": \"T1105  Ingress Tool Transfer (EICAR .exe)\", \"tid\": \"T1105\", \"name\": \"Ingress Tool Transfer (EICAR .exe)\", \"detected\": false, \"detail\": \"EICAR .exe not quarantined \\u2014 AV did not detect\", \"elapsed\": 2.74}, {\"test\": \"T1082  System Discovery + Exfil Simulation\", \"tid\": \"T1082\", \"name\": \"System Discovery + Exfil Simulation\", \"detected\": true, \"detail\": \"Staging/exfil chain flagged (file_ok=True, exfil_blocked=True)\", \"elapsed\": 6.25}], \"metrics\": {\"cpu_avg\": 8.5, \"cpu_peak\": 23.5, \"ram_avg\": 41.68, \"ram_peak\": 93.71, \"disk_read_mb\": 0.56, \"disk_write_mb\": 13.41, \"detection_time\": 0.35}}, {\"module_id\": 4, \"name\": \"ABAE Behavioral Engine\", \"execution_time\": 61.28, \"status\": \"Completed\", \"detected\": true, \"test_results\": [{\"tid\": \"B-01\", \"name\": \"Ransomware File Churn (AMSI)\", \"test\": \"B-01  Ransomware File Churn (AMSI)\", \"detected\": false, \"detail\": \"PS1 payload completed cleanly. Sentinel \\u2713, rc=0, stages 4/4, file intact, no AV events.\", \"elapsed\": 9.33, \"detection_latency\": 0.0, \"extra\": {\"payload\": \"abae_payload_b01.ps1\", \"mode\": \"powershell_amsi_v5\", \"returncode\": 0, \"sentinel_ok\": true, \"stages_expected\": 4, \"stages_found\": 4, \"stages_missing\": 0, \"defender_events\": 0, \"vendor_events\": 0, \"file_quarantined\": false, \"file_wiped\": false, \"stderr_tail\": \"\"}}, {\"tid\": \"B-02\", \"name\": \"Entropy Storm / XOR Cipher (AMSI)\", \"test\": \"B-02  Entropy Storm / XOR Cipher (AMSI)\", \"detected\": false, \"detail\": \"PS1 payload completed cleanly. Sentinel \\u2713, rc=0, stages 3/3, file intact, no AV events.\", \"elapsed\": 9.17, \"detection_latency\": 0.0, \"extra\": {\"payload\": \"abae_payload_b02.ps1\", \"mode\": \"powershell_amsi_v5\", \"returncode\": 0, \"sentinel_ok\": true, \"stages_expected\": 3, \"stages_found\": 3, \"stages_missing\": 0, \"defender_events\": 0, \"vendor_events\": 0, \"file_quarantined\": false, \"file_wiped\": false, \"stderr_tail\": \"\"}}, {\"tid\": \"B-03\", \"name\": \"Process Chain + Invoke-Expression (AMSI)\", \"test\": \"B-03  Process Chain + Invoke-Expression (AMSI)\", \"detected\": false, \"detail\": \"PS1 payload completed cleanly. Sentinel \\u2713, rc=0, stages 4/4, file intact, no AV events.\", \"elapsed\": 11.83, \"detection_latency\": 0.0, \"extra\": {\"payload\": \"abae_payload_b03.ps1\", \"mode\": \"powershell_amsi_v5\", \"returncode\": 0, \"sentinel_ok\": true, \"stages_expected\": 4, \"stages_found\": 4, \"stages_missing\": 0, \"defender_events\": 0, \"vendor_events\": 0, \"file_quarantined\": false, \"file_wiped\": false, \"stderr_tail\": \"\"}}, {\"tid\": \"B-04\", \"name\": \"Registry Persistence + Storm (AMSI)\", \"test\": \"B-04  Registry Persistence + Storm (AMSI)\", \"detected\": false, \"detail\": \"PS1 payload completed cleanly. Sentinel \\u2713, rc=0, stages 5/5, file intact, no AV events.\", \"elapsed\": 8.87, \"detection_latency\": 0.0, \"extra\": {\"payload\": \"abae_payload_b04.ps1\", \"mode\": \"powershell_amsi_v5\", \"returncode\": 0, \"sentinel_ok\": true, \"stages_expected\": 5, \"stages_found\": 5, \"stages_missing\": 0, \"defender_events\": 0, \"vendor_events\": 0, \"file_quarantined\": false, \"file_wiped\": false, \"stderr_tail\": \"\"}}, {\"tid\": \"B-05\", \"name\": \"LOLBIN + AMSI String Triggers\", \"test\": \"B-05  LOLBIN + AMSI String Triggers\", \"detected\": true, \"detail\": \"[L2] Surgical child-process termination detected. Sentinel present but 2/6 stage(s) missing. Found stages: ['stage1_certutil_encode_decode', 'stage2_mshta_vbscript', 'stage3_iex_base64', 'stage4_bitsadmin_transfer']\", \"elapsed\": 12.1, \"detection_latency\": 12.096, \"extra\": {\"payload\": \"abae_payload_b05.ps1\", \"mode\": \"powershell_amsi_v5\", \"returncode\": 0, \"sentinel_ok\": true, \"stages_expected\": 6, \"stages_found\": 4, \"stages_missing\": 2, \"defender_events\": 15, \"vendor_events\": 0, \"file_quarantined\": false, \"file_wiped\": false, \"stderr_tail\": \"\"}}, {\"tid\": \"B-06\", \"name\": \"Concurrent Runspace Storm (AMSI)\", \"test\": \"B-06  Concurrent Runspace Storm (AMSI)\", \"detected\": false, \"detail\": \"PS1 payload completed cleanly. Sentinel \\u2713, rc=0, stages 4/4, file intact, no AV events.\", \"elapsed\": 9.91, \"detection_latency\": 0.0, \"extra\": {\"payload\": \"abae_payload_b06.ps1\", \"mode\": \"powershell_amsi_v5\", \"returncode\": 0, \"sentinel_ok\": true, \"stages_expected\": 4, \"stages_found\": 4, \"stages_missing\": 0, \"defender_events\": 0, \"vendor_events\": 0, \"file_quarantined\": false, \"file_wiped\": false, \"stderr_tail\": \"\"}}], \"abae_verdict\": \"FAIL\", \"metrics\": {\"cpu_avg\": 16.6, \"cpu_peak\": 100.0, \"ram_avg\": 79.69, \"ram_peak\": 221.3, \"disk_read_mb\": 9.17, \"disk_write_mb\": 109.8, \"detection_time\": 61.25}}]",
+  "run_id": "run_db72d48e",
+  "timestamp": "2026-03-25 21:14:38",
+  "total_score": 6.37,
+  "uploaded_at": "2026-03-25 13:14:38"
+}

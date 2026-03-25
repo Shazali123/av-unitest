@@ -7,6 +7,7 @@ Results Handler - Compiles and exports test results
 import os
 import json
 import uuid
+import platform
 import urllib.request
 import urllib.error
 from datetime import datetime
@@ -364,8 +365,13 @@ class ResultsHandler:
         payload = {
             "av_name":                   av_name,
             "run_id":                    f"run_{str(uuid.uuid4())[:8]}",
+            "timestamp":                 datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            "total_score":               scores['physical_total'],
             "detection_score":           scores['detection_score'],
             "performance_score":         scores['performance_score'],
+            "os_info":                   platform.platform(),
+            "module_results":            module_results,
+            "breakdown":                 bd,
             "physical_total":            scores['physical_total'],
             "eicar_detected":            _mod_detected('eicar'),
             "gophish_detected":          _mod_detected('gophish'),
@@ -399,7 +405,7 @@ class ResultsHandler:
                 data=json_bytes,
                 headers={
                     'Content-Type': 'application/json',
-                    'X-API-Key': os.environ.get('AV_UNITEST_API_KEY', 'av-unitest-default-key-change-me'),
+                    'X-API-Key': os.environ.get('AV_UNITEST_API_KEY', 'avunitest-shzl-2026-xK9mP4wQ7rB3'),
                 },
                 method='POST',
             )

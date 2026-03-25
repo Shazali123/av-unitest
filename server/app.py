@@ -2,7 +2,7 @@
 # Copyright (c) 2026 Shazali. Licensed under GPL-3.0.
 """
 AV-Unitest Flask Backend — Unified API Server
-Replaces upload_results.php, get_results.php, and api.py
+Deployed on PythonAnywhere (free tier).
 Serves the dashboard and handles benchmark result uploads.
 """
 
@@ -23,7 +23,7 @@ app = Flask(__name__, static_folder='.', static_url_path='')
 
 # CORS — restrict to own domain in production
 ALLOWED_ORIGINS = os.environ.get(
-    'CORS_ORIGINS', 'https://av-unitest.onrender.com'
+    'CORS_ORIGINS', 'https://shazali123.pythonanywhere.com'
 ).split(',')
 CORS(app, origins=ALLOWED_ORIGINS)
 
@@ -45,75 +45,50 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Database setup — SQLite locally, PostgreSQL on Render
+# Database setup — SQLite (works on PythonAnywhere free tier + local dev)
 # ---------------------------------------------------------------------------
 
-DATABASE_URL = os.environ.get('DATABASE_URL', '')
+import sqlite3
 
-if DATABASE_URL and DATABASE_URL.startswith('postgres'):
-    # PostgreSQL (Render production)
-    import psycopg2
-    DB_TYPE = 'postgres'
+DB_PATH = os.environ.get(
+    'DB_PATH',
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), 'benchmark.db')
+)
 
-    def get_db():
-        conn = psycopg2.connect(DATABASE_URL)
-        return conn
+def get_db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
 
-    def init_db():
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute('''
-            CREATE TABLE IF NOT EXISTS benchmark_results (
-                id SERIAL PRIMARY KEY,
-                run_id TEXT UNIQUE,
-                av_name TEXT NOT NULL,
-                os_info TEXT DEFAULT '',
-                timestamp TEXT NOT NULL,
-                total_score REAL DEFAULT 0,
-                detection_score REAL DEFAULT 0,
-                performance_score REAL DEFAULT 0,
-                results_json TEXT DEFAULT '{}',
-                breakdown_json TEXT DEFAULT '{}',
-                uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                client_ip TEXT DEFAULT ''
-            )
-        ''')
-        conn.commit()
-        conn.close()
-        logger.info("PostgreSQL database initialized")
-
-else:
-    # SQLite (local development)
-    import sqlite3
-    DB_TYPE = 'sqlite'
-    DB_PATH = os.path.join(os.path.dirname(__file__), 'benchmark.db')
-
-    def get_db():
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
-        return conn
-
-    def init_db():
-        conn = get_db()
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS benchmark_results (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                run_id TEXT UNIQUE,
-                av_name TEXT NOT NULL,
-                os_info TEXT DEFAULT '',
-                timestamp TEXT NOT NULL,
-                total_score REAL DEFAULT 0,
-                detection_score REAL DEFAULT 0,
-                performance_score REAL DEFAULT 0,
-                results_json TEXT DEFAULT '{}',
-                breakdown_json TEXT DEFAULT '{}',
-                uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                client_ip TEXT DEFAULT ''
-            )
-        ''')
-        conn.commit()
-        conn.close()
-        logger.info(f"SQLite database initialized at {DB_PATH}")
+def init_db():
+    conn = get_db()
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS benchmark_results (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            run_id TEXT UNIQUE,
+            av_name TEXT NOT NULL,
+            os_info TEXT DEFAULT '',
+            timestamp TEXT NOT NULL,
+            total_score REAL DEFAULT 0,
+            detection_score REAL DEFAULT 0,
+            performance_score REAL DEFAULT 0,
+            eicar_detected INTEGER DEFAULT 0,
+            gophish_detected INTEGER DEFAULT 0,
+            atomic_detected INTEGER DEFAULT 0,
+            abae_detected INTEGER DEFAULT 0,
+            abae_verdict TEXT DEFAULT '',
+            cpu_avg REAL DEFAULT 0,
+            ram_peak_mb REAL DEFAULT 0,
+            disk_write_mb REAL DEFAULT 0,
+            results_json TEXT DEFAULT '{}',
+            breakdown_json TEXT DEFAULT '{}',
+            uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            client_ip TEXT DEFAULT ''
+        )
+    ''')
+    conn.commit()
+    conn.close()
+    logger.info(f"SQLite database initialized at {DB_PATH}")
 
 
 # ---------------------------------------------------------------------------
@@ -163,12 +138,15 @@ def add_security_headers(response):
     if request.path == '/' or request.path.endswith('.html'):
         response.headers['Content-Security-Policy'] = (
             "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://code.jquery.com; "
-            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdn.datatables.net; "
+            "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://code.jquery.com https://cdn.datatables.net; "
+            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdn.datatables.net https://fonts.googleapis.com; "
             "font-src 'self' https://fonts.gstatic.com; "
             "img-src 'self' data:; "
             "connect-src 'self'"
         )
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
     return response
 
 
@@ -179,41 +157,18 @@ def add_security_headers(response):
 def query_db(sql, params=(), fetchone=False, commit=False):
     """Execute a parameterized SQL query. Returns rows as dicts."""
     conn = get_db()
-    if DB_TYPE == 'postgres':
-        # PostgreSQL uses %s placeholders
-        sql = sql.replace('?', '%s')
-        cur = conn.cursor()
-        cur.execute(sql, params)
-        if commit:
-            conn.commit()
-            conn.close()
-            return None
-        if fetchone:
-            row = cur.fetchone()
-            if row:
-                cols = [desc[0] for desc in cur.description]
-                conn.close()
-                return dict(zip(cols, row))
-            conn.close()
-            return None
-        rows = cur.fetchall()
-        cols = [desc[0] for desc in cur.description]
+    cur = conn.execute(sql, params)
+    if commit:
+        conn.commit()
         conn.close()
-        return [dict(zip(cols, row)) for row in rows]
-    else:
-        # SQLite
-        cur = conn.execute(sql, params)
-        if commit:
-            conn.commit()
-            conn.close()
-            return None
-        if fetchone:
-            row = cur.fetchone()
-            conn.close()
-            return dict(row) if row else None
-        rows = cur.fetchall()
+        return None
+    if fetchone:
+        row = cur.fetchone()
         conn.close()
-        return [dict(row) for row in rows]
+        return dict(row) if row else None
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
 
 
 # ---------------------------------------------------------------------------
@@ -258,17 +213,29 @@ def upload_results():
         detection = min(max(float(data.get('detection_score', 0)), 0), 6)
         performance = min(max(float(data.get('performance_score', 0)), 0), 4)
 
+        eicar_detected = int(data.get('eicar_detected', 0))
+        gophish_detected = int(data.get('gophish_detected', 0))
+        atomic_detected = int(data.get('atomic_detected', 0))
+        abae_detected = int(data.get('abae_detected', 0))
+        abae_verdict = str(data.get('abae_verdict', 'NOT RUN'))[:50]
+        cpu_avg = float(data.get('cpu_avg', 0))
+        ram_peak_mb = float(data.get('ram_peak_mb', 0))
+        disk_write_mb = float(data.get('disk_write_mb', 0))
+
         results_json = json.dumps(data.get('module_results', []))
         breakdown_json = json.dumps(data.get('breakdown', {}))
 
         query_db(
             '''INSERT INTO benchmark_results
                (run_id, av_name, os_info, timestamp, total_score,
-                detection_score, performance_score, results_json,
+                detection_score, performance_score, eicar_detected,
+                gophish_detected, atomic_detected, abae_detected, abae_verdict,
+                cpu_avg, ram_peak_mb, disk_write_mb, results_json,
                 breakdown_json, client_ip)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
             (run_id, av_name, os_info, timestamp, total, detection,
-             performance, results_json, breakdown_json,
+             performance, eicar_detected, gophish_detected, atomic_detected, abae_detected,
+             abae_verdict, cpu_avg, ram_peak_mb, disk_write_mb, results_json, breakdown_json,
              request.remote_addr or ''),
             commit=True
         )
@@ -346,14 +313,18 @@ def get_summary():
     rows = query_db('''
         SELECT av_name,
                COUNT(*) as run_count,
-               ROUND(AVG(total_score), 2) as avg_total,
+               ROUND(AVG(total_score), 2) as avg_score,
                ROUND(AVG(detection_score), 2) as avg_detection,
                ROUND(AVG(performance_score), 2) as avg_performance,
-               ROUND(MAX(total_score), 2) as best_total,
-               ROUND(MIN(total_score), 2) as worst_total
+               ROUND(MAX(total_score), 2) as best_score,
+               ROUND(MAX(detection_score), 2) as best_detection,
+               ROUND(AVG(cpu_avg), 1) as avg_cpu,
+               ROUND(AVG(ram_peak_mb), 1) as avg_ram_mb,
+               ROUND(AVG(disk_write_mb), 1) as avg_disk_mb,
+               MAX(abae_verdict) as abae_verdict
         FROM benchmark_results
         GROUP BY av_name
-        ORDER BY avg_total DESC
+        ORDER BY avg_score DESC
     ''')
     return jsonify(rows)
 
