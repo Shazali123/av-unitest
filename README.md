@@ -1,7 +1,7 @@
 # AV - Unitest v1.0.0
 
 Modular Antivirus Benchmark Platform
-AV-Unitest is a lightweight, portable security benchmarking tool designed to evaluate the effectiveness of antivirus (AV) software across multiple detection layers. It simulates common attack vectors—from simple signature matches to complex behavioral patterns—without using actual malicious code.
+AV-Unitest is a lightweight, portable security benchmarking tool designed to evaluate the effectiveness of antivirus (AV) software across multiple detection layers. It simulates common attack vectors from simple signature matches to complex behavioral patterns without using actual malicious code.
 
 
 ## Key Features
