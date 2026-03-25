@@ -1,3 +1,5 @@
+# AV-Unitest — Modular Antivirus Benchmark Platform
+# Copyright (c) 2026 Shazali. Licensed under GPL-3.0.
 """
 Results Handler - Compiles and exports test results
 """
@@ -395,7 +397,10 @@ class ResultsHandler:
             req = urllib.request.Request(
                 server_url,
                 data=json_bytes,
-                headers={'Content-Type': 'application/json'},
+                headers={
+                    'Content-Type': 'application/json',
+                    'X-API-Key': os.environ.get('AV_UNITEST_API_KEY', 'av-unitest-default-key-change-me'),
+                },
                 method='POST',
             )
             with urllib.request.urlopen(req, timeout=15) as resp:

@@ -1,3 +1,5 @@
+# AV-Unitest — Modular Antivirus Benchmark Platform
+# Copyright (c) 2026 Shazali. Licensed under GPL-3.0.
 """
 System Monitor - Tracks CPU, RAM, and Disk I/O during module execution
 """

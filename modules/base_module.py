@@ -1,3 +1,5 @@
+# AV-Unitest — Modular Antivirus Benchmark Platform
+# Copyright (c) 2026 Shazali. Licensed under GPL-3.0.
 """
 Base Module - Abstract base class for all test modules
 """

@@ -1,3 +1,5 @@
+# AV-Unitest — Modular Antivirus Benchmark Platform
+# Copyright (c) 2026 Shazali. Licensed under GPL-3.0.
 """
 Module 2: GoPhish Phishing Simulation (Phase 2 — Direct Simulation)
 
@@ -426,31 +428,208 @@ class GoPhishModule(BaseModule):
         return {'id': self.module_id, 'name': self.name, 'description': self.description}
 
     # ------------------------------------------------------------------
-    # Offline demo fallback
+    # Standalone mode (no GoPhish server needed)
     # ------------------------------------------------------------------
 
-    def _run_offline_demo(self, monitor, start_time, reason=""):
-        import random
-        print(f"[GoPhish] OFFLINE DEMO MODE" + (f" ({reason})" if reason else ""))
-        time.sleep(2)
+    def _run_standalone(self, monitor, start_time):
+        """
+        Standalone phishing simulation: runs real L0-L3 AV escalation
+        tests using the bundled phishing_payload.html.
+        No GoPhish server required — produces real detection results.
+        """
+        import subprocess
+
+        print("[GoPhish] ===========================================")
+        print("[GoPhish]  STANDALONE MODE — No GoPhish Server")
+        print("[GoPhish]  Using bundled phishing payload for L0-L3")
+        print("[GoPhish]  Real AV detection tests (not demo data)")
+        print("[GoPhish] ===========================================")
+
+        # Load bundled phishing payload
+        payload_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), 'phishing_payload.html'
+        )
+        if not os.path.exists(payload_path):
+            print(f"[GoPhish] ERROR: Payload not found: {payload_path}")
+            if monitor.monitoring:
+                monitor.stop()
+            self.execution_time = time.time() - start_time
+            self.metrics = monitor.get_results()
+            self.status = "Failed"
+            return False
+
+        with open(payload_path, 'r', encoding='utf-8') as f:
+            body = f.read()
+        print(f"[GoPhish] Loaded payload: {len(body)} bytes")
+
+        escalation = {
+            'level_0_html': None, 'level_1_ps1': None,
+            'level_2_execute': None, 'triggered_level': None
+        }
+
+        # === Level 0 — .html drop + quarantine poll ===
+        print("[GoPhish] [L0] Dropping .html payload ...")
+        tmp0 = tempfile.NamedTemporaryFile(
+            mode='w', suffix='.html', prefix='phish_page_',
+            delete=False, encoding='utf-8'
+        )
+        tmp0.write(body)
+        tmp0.close()
+        print(f"[GoPhish]   -> {tmp0.name}  (polling {_POLL_WINDOW}s)")
+        q, t = _av_poll(tmp0.name)
+        if q:
+            escalation.update({
+                'level_0_html': {'detected': True, 'latency_s': t},
+                'triggered_level': 0
+            })
+            print(f"[GoPhish] [L0] DETECTED — quarantined in {t}s!")
+            monitor.mark_detection()
+            self.detected = True
+        else:
+            escalation['level_0_html'] = {'detected': False}
+            print("[GoPhish] [L0] Not detected -> escalating to L1 ...")
+            try:
+                os.unlink(tmp0.name)
+            except OSError:
+                pass
+
+        # === Level 1 — .ps1 extension (if L0 didn't trigger) ===
+        if not self.detected:
+            print("[GoPhish] [L1] Dropping .ps1 payload ...")
+            tmp1 = tempfile.NamedTemporaryFile(
+                mode='w', suffix='.ps1', prefix='phish_drop_',
+                delete=False, encoding='utf-8'
+            )
+            tmp1.write(f"# AV-Unitest phishing payload\n\n{body}")
+            tmp1.close()
+            print(f"[GoPhish]   -> {tmp1.name}  (polling {_POLL_WINDOW}s)")
+            q, t = _av_poll(tmp1.name)
+            if q:
+                escalation.update({
+                    'level_1_ps1': {'detected': True, 'latency_s': t},
+                    'triggered_level': 1
+                })
+                print(f"[GoPhish] [L1] DETECTED — .ps1 quarantined in {t}s!")
+                monitor.mark_detection()
+                self.detected = True
+            else:
+                escalation['level_1_ps1'] = {'detected': False}
+                print("[GoPhish] [L1] Not detected -> escalating to L2 ...")
+
+            # === Level 2 — Execute .ps1 via PowerShell ===
+            if not self.detected:
+                print("[GoPhish] [L2] Detonating .ps1 via PowerShell ...")
+                exec_r = {'detected': False, 'latency_s': None, 'note': ''}
+                try:
+                    proc = subprocess.Popen(
+                        ['powershell.exe', '-NonInteractive', '-WindowStyle', 'Hidden',
+                         '-ExecutionPolicy', 'Bypass', '-File', tmp1.name],
+                        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE
+                    )
+                    deadline = time.monotonic() + 2.0
+                    killed = False
+                    while time.monotonic() < deadline:
+                        ret = proc.poll()
+                        if (ret is not None and ret not in (0, None)) or not os.path.exists(tmp1.name):
+                            killed = True
+                            break
+                        time.sleep(_POLL_INTERVAL)
+                    e2 = round(2.0 - max(0.0, deadline - time.monotonic()), 2)
+                    if killed:
+                        exec_r = {'detected': True, 'latency_s': e2, 'note': 'process killed/file deleted'}
+                        escalation.update({'level_2_execute': exec_r, 'triggered_level': 2})
+                        print(f"[GoPhish] [L2] DETECTED — killed in {e2}s!")
+                        monitor.mark_detection()
+                        self.detected = True
+                    else:
+                        exec_r['note'] = 'Ran 2s unchallenged'
+                        print("[GoPhish] [L2] Not detected — AV did not intervene.")
+                    try:
+                        proc.kill()
+                    except Exception:
+                        pass
+                except Exception as ex:
+                    exec_r = {'detected': True, 'latency_s': 0, 'note': f'launch blocked: {ex}'}
+                    escalation.update({'level_2_execute': exec_r, 'triggered_level': 2})
+                    print(f"[GoPhish] [L2] DETECTED — launch blocked: {ex}")
+                    monitor.mark_detection()
+                    self.detected = True
+                escalation['level_2_execute'] = exec_r
+
+            # Cleanup L1 temp file
+            try:
+                os.unlink(tmp1.name)
+            except OSError:
+                pass
+
+        # === Level 3 — PowerShell Living-off-the-Land (safe URL test) ===
+        print("\n[GoPhish] ---- LEVEL 3: POWERSHELL LOL TEST ----")
+        # Use a safe URL for the IWR download test
+        safe_url = "http://example.com"
+        lol_blocked, lol_detail, lol_latency = _powershell_lol_test(safe_url)
+        if lol_blocked and not self.detected:
+            monitor.mark_detection()
+            self.detected = True
+
+        # === Build verdict ===
+        print("\n[GoPhish] ---- STANDALONE SIMULATION COMPLETE ----")
+
+        trig = escalation.get('triggered_level')
+        if trig is not None:
+            level_labels = {
+                0: 'L0 — on-disk .html quarantine',
+                1: 'L1 — .ps1 heuristic quarantine',
+                2: 'L2 — PowerShell execution terminated',
+            }
+            verdict_reason = f"Detected via {level_labels.get(trig, f'Level {trig}')}."
+        elif lol_blocked:
+            verdict_reason = f"Detected via L3 — PowerShell LoL (IWR) blocked. {lol_detail}"
+        elif self.detected:
+            verdict_reason = "Detected via AV intervention."
+        else:
+            verdict_reason = (
+                "All escalation levels (L0-L3) passed without AV detection. "
+                "Phishing payload was not flagged."
+            )
+
+        print(f"[GoPhish] VERDICT: {'DETECTED' if self.detected else 'NOT DETECTED'}")
+        print(f"[GoPhish] Reason : {verdict_reason}")
+        print(f"[GoPhish] Escalation summary:")
+        print(f"  L0 (.html drop) : {escalation.get('level_0_html')}")
+        print(f"  L1 (.ps1 ext)   : {escalation.get('level_1_ps1')}")
+        print(f"  L2 (execution)  : {escalation.get('level_2_execute')}")
+        print(f"  L3 (PS LoL)     : blocked={lol_blocked}  detail={lol_detail}")
+
+        self.gophish_results = {
+            'mode':                  'Standalone',
+            'campaign_id':           'STANDALONE',
+            'campaign_status':       'Completed (Standalone)',
+            'phish_url':             'bundled_payload',
+            'phish_url_accessible':  True,
+            'phish_page_blocked':    self.detected,
+            'cred_submit_success':   False,
+            'clicks_recorded':       0,
+            'submitted_recorded':    0,
+            'verdict_reason':        verdict_reason,
+            'escalation': {
+                'level_0_html':    escalation.get('level_0_html'),
+                'level_1_ps1':     escalation.get('level_1_ps1'),
+                'level_2_execute': escalation.get('level_2_execute'),
+                'triggered_level': escalation.get('triggered_level'),
+                'level_3_lol': {
+                    'blocked':    lol_blocked,
+                    'detail':     lol_detail,
+                    'latency_s':  lol_latency,
+                },
+            },
+        }
+
         if monitor.monitoring:
             monitor.stop()
-        self.offline_demo    = True
-        self.detected        = False
-        self.gophish_results = {
-            'mode':                  'Demo',
-            'campaign_id':           'DEMO',
-            'campaign_status':       'Completed (Demo)',
-            'emails_sent':           1,
-            'phish_url_accessible':  True,
-            'phish_page_blocked':    False,
-            'cred_submit_success':   True,
-            'clicks_recorded':       random.randint(0, 1),
-            'submitted_recorded':    0,
-        }
         self.execution_time = time.time() - start_time
-        self.metrics        = monitor.get_results()
-        self.status         = "Completed (Demo)"
+        self.metrics = monitor.get_results()
+        self.status = "Completed"
+        return True
 
     # ------------------------------------------------------------------
     # Live run
@@ -699,34 +878,36 @@ class GoPhishModule(BaseModule):
             monitor.start()
 
             cfg = self._config
-            use_demo = (
-                cfg.get('offline_demo_mode', False)
-                or not cfg.get('api_key', '').strip()
-                or cfg.get('api_key', '') in ('YOUR_API_KEY_HERE', '')
+
+            # Check if user has configured a live GoPhish server
+            has_gophish = (
+                cfg.get('api_key', '').strip()
+                and cfg.get('api_key', '') not in ('YOUR_API_KEY_HERE', '')
+                and cfg.get('host', '').strip()
+                and not cfg.get('offline_demo_mode', False)
             )
 
-            if use_demo:
-                self._run_offline_demo(monitor, start_time,
-                                       reason="offline_demo_mode=true or no API key")
-                return True
+            if has_gophish:
+                # Live GoPhish mode — user has a server configured
+                try:
+                    ok = self._run_live(monitor, start_time)
+                except Exception as live_err:
+                    print(f"[GoPhish] Live run error: {type(live_err).__name__}: {live_err}")
+                    import traceback
+                    traceback.print_exc()
+                    ok = False
 
-            try:
-                ok = self._run_live(monitor, start_time)
-            except Exception as live_err:
-                print(f"[GoPhish] Live run error: {type(live_err).__name__}: {live_err}")
-                import traceback
-                traceback.print_exc()
-                ok = False
-
-            if not ok:
-                print("[GoPhish] Falling back to offline demo mode")
-                if monitor.monitoring:
-                    monitor.stop()
-                import copy
-                from system_monitor import SystemMonitor as SM
-                m2 = SM()
-                m2.start()
-                self._run_offline_demo(m2, start_time, reason="live run failed")
+                if not ok:
+                    print("[GoPhish] Live run failed — falling back to standalone mode")
+                    if monitor.monitoring:
+                        monitor.stop()
+                    from system_monitor import SystemMonitor as SM
+                    m2 = SM()
+                    m2.start()
+                    self._run_standalone(m2, start_time)
+            else:
+                # Standalone mode (default) — real L0-L3 tests, no server
+                self._run_standalone(monitor, start_time)
 
             return True
 

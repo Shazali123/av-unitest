@@ -1,14 +1,20 @@
+# AV-Unitest — Modular Antivirus Benchmark Platform
+# Copyright (c) 2026 Shazali. Licensed under GPL-3.0.
 """
-AV Benchmark Testing Framework - Main Application
-Phase 5: Score calculation + Upload to Ubuntu SQLite server
+AV-Unitest — Main Application
+Modular Antivirus Benchmark Platform
 """
 
 import customtkinter as ctk
 import threading
 import sys
+import json
+import urllib.request
 import av_detector
 from module_manager import ModuleManager
 from results_handler import ResultsHandler
+
+APP_VERSION = "1.0.0"
 
 
 # ---------------------------------------------------------------------------
@@ -47,14 +53,14 @@ class _TextRedirector:
 class BenchmarkApp(ctk.CTk):
     """Main application window"""
 
-    # --- Server config (change IP/port here if your Ubuntu VM moves) ---
-    SERVER_URL = "http://192.168.1.121/upload_results.php"
+    # --- Server config ---
+    SERVER_URL = "https://av-unitest.onrender.com/api/upload"
 
     def __init__(self):
         super().__init__()
         
         # Configure window
-        self.title("AV Benchmark Testing Framework")
+        self.title(f"AV-Unitest v{APP_VERSION} — Modular AV Benchmark")
         self.geometry("900x700")
         self.resizable(False, False)
         
@@ -67,6 +73,7 @@ class BenchmarkApp(ctk.CTk):
         self.results_handler = ResultsHandler()
         self.av_name = "Detecting..."
         self.module_results = []
+        self._update_info = None  # (latest_version, download_url) or None
         
         # UI state
         self.current_screen = "start"
@@ -80,7 +87,39 @@ class BenchmarkApp(ctk.CTk):
         
         # Detect AV in background
         threading.Thread(target=self.detect_av, daemon=True).start()
+        # Check for updates in background
+        threading.Thread(target=self._check_for_updates, daemon=True).start()
         
+    def _check_for_updates(self):
+        """Check the server for a newer version."""
+        try:
+            url = self.SERVER_URL.rsplit('/api/', 1)[0] + '/api/version'
+            req = urllib.request.Request(url, headers={'User-Agent': 'AV-Unitest'})
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = json.loads(resp.read().decode())
+            latest = data.get('version', APP_VERSION)
+            if latest != APP_VERSION:
+                self._update_info = (latest, data.get('download_url', ''))
+                self.after(0, self._show_update_banner)
+        except Exception:
+            pass  # Silently ignore — update check is best-effort
+
+    def _show_update_banner(self):
+        """Display a non-intrusive update banner at the top of the window."""
+        if not self._update_info:
+            return
+        ver, url = self._update_info
+        banner = ctk.CTkFrame(self, fg_color="#1a5276", height=35)
+        banner.pack(fill="x", side="top", before=self.main_container)
+        banner.pack_propagate(False)
+        lbl = ctk.CTkLabel(
+            banner,
+            text=f"🔄 AV-Unitest v{ver} is available! Download at: {url}",
+            font=ctk.CTkFont(size=13),
+            text_color="#aed6f1"
+        )
+        lbl.pack(side="left", padx=15, pady=5)
+
     def detect_av(self):
         """Detect antivirus in background"""
         self.av_name = av_detector.detect_antivirus()
@@ -100,18 +139,26 @@ class BenchmarkApp(ctk.CTk):
         # Title
         title = ctk.CTkLabel(
             self.main_container,
-            text="AV Benchmark Testing Framework",
-            font=ctk.CTkFont(size=32, weight="bold")
+            text="AV-Unitest",
+            font=ctk.CTkFont(size=36, weight="bold")
         )
-        title.pack(pady=(40, 10))
+        title.pack(pady=(40, 5))
         
         # Subtitle
         subtitle = ctk.CTkLabel(
             self.main_container,
-            text="Phase 1 - Module Testing",
-            font=ctk.CTkFont(size=18)
+            text="Modular Antivirus Benchmark Platform",
+            font=ctk.CTkFont(size=16)
         )
-        subtitle.pack(pady=(0, 30))
+        subtitle.pack(pady=(0, 5))
+
+        version_label = ctk.CTkLabel(
+            self.main_container,
+            text=f"v{APP_VERSION}",
+            font=ctk.CTkFont(size=12),
+            text_color="gray"
+        )
+        version_label.pack(pady=(0, 30))
         
         # Info card
         info_frame = ctk.CTkFrame(self.main_container)

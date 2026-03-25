@@ -4,9 +4,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AV Benchmark Dashboard</title>
+  <title>AV-Unitest — Modular Antivirus Benchmark Platform</title>
   <meta name="description"
-    content="Antivirus benchmark comparison dashboard — detection scores, performance metrics, and test results." />
+    content="AV-Unitest: Open-source modular antivirus benchmark. Test your AV across EICAR, phishing, MITRE ATT&CK, and behavioral analysis. View global results." />
 
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -958,6 +958,102 @@
     }
 
 
+    /* ─── Hero / Landing Section ─────────────────────────────── */
+    .hero {
+      text-align: center;
+      padding: 80px 0 60px;
+    }
+    .hero h2 {
+      font-size: 2.8rem;
+      font-weight: 700;
+      letter-spacing: -1px;
+      margin-bottom: 12px;
+      background: linear-gradient(135deg, var(--cyan), #7b61ff);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .hero .hero-sub {
+      font-size: 1.1rem;
+      color: var(--text-muted);
+      max-width: 650px;
+      margin: 0 auto 32px;
+      line-height: 1.6;
+    }
+    .hero .hero-version {
+      font-size: .8rem;
+      color: var(--text-muted);
+      margin-bottom: 28px;
+    }
+    .download-btn {
+      display: inline-block;
+      background: linear-gradient(135deg, var(--cyan), #7b61ff);
+      color: #0a0e1a;
+      font-weight: 700;
+      font-size: 1rem;
+      padding: 14px 40px;
+      border-radius: 10px;
+      text-decoration: none;
+      transition: transform .15s, box-shadow .15s;
+      box-shadow: 0 4px 20px rgba(0,229,255,.25);
+    }
+    .download-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 30px rgba(0,229,255,.4);
+    }
+    .how-it-works {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 20px;
+      margin: 48px 0 0;
+    }
+    .hiw-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 24px 20px;
+      text-align: center;
+    }
+    .hiw-card .hiw-icon { font-size: 2rem; margin-bottom: 10px; }
+    .hiw-card h3 { font-size: .95rem; margin-bottom: 6px; }
+    .hiw-card p { font-size: .78rem; color: var(--text-muted); line-height: 1.5; }
+
+    .warning-callout {
+      background: rgba(255,171,64,.08);
+      border: 1px solid rgba(255,171,64,.25);
+      border-radius: 10px;
+      padding: 14px 20px;
+      margin: 28px auto 0;
+      max-width: 700px;
+      font-size: .82rem;
+      color: var(--amber);
+      text-align: center;
+    }
+    .warning-callout a { color: var(--cyan); }
+
+    .disclaimer-callout {
+      background: rgba(255,82,82,.06);
+      border: 1px solid rgba(255,82,82,.2);
+      border-radius: 10px;
+      padding: 14px 20px;
+      margin: 14px auto 0;
+      max-width: 700px;
+      font-size: .78rem;
+      color: var(--red);
+      text-align: center;
+    }
+
+    .section-divider {
+      text-align: center;
+      padding: 50px 0 10px;
+      font-size: 1.3rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .section-divider span {
+      color: var(--cyan);
+    }
+
   </style>
 </head>
 
@@ -969,8 +1065,8 @@
       <div class="logo">
         <div class="logo-icon">🛡️</div>
         <div class="logo-text">
-          <h1>AV Benchmark Dashboard</h1>
-          <p>Antivirus Detection &amp; Performance Analysis</p>
+          <h1>AV-Unitest</h1>
+          <p>Modular Antivirus Benchmark Platform</p>
         </div>
       </div>
       <div class="header-right">
@@ -982,6 +1078,58 @@
         <button class="btn btn-primary" id="export-btn">⬇ Export CSV</button>
       </div>
     </header>
+
+    <!-- HERO / LANDING SECTION -->
+    <section class="hero" id="hero">
+      <h2>AV-Unitest</h2>
+      <p class="hero-sub">
+        An open-source, modular antivirus benchmark that tests your AV across 4 layers:
+        EICAR signatures, phishing simulation, MITRE ATT&amp;CK techniques, and behavioral anomaly detection.
+      </p>
+      <p class="hero-version">v1.0.0 · GPL-3.0 · Windows 10/11</p>
+      <a href="https://github.com/Shazali123/av-unitest/releases/latest" class="download-btn" id="download-btn">
+        ⬇ Download AV-Unitest.exe
+      </a>
+
+      <div class="how-it-works">
+        <div class="hiw-card">
+          <div class="hiw-icon">📥</div>
+          <h3>1. Download</h3>
+          <p>Grab AV-Unitest.exe — no install needed. Runs standalone.</p>
+        </div>
+        <div class="hiw-card">
+          <div class="hiw-icon">▶️</div>
+          <h3>2. Run</h3>
+          <p>Click Start Benchmark. 4 modules test your AV automatically.</p>
+        </div>
+        <div class="hiw-card">
+          <div class="hiw-icon">📊</div>
+          <h3>3. Score</h3>
+          <p>Get a 10-point score: 6 pts detection + 4 pts performance.</p>
+        </div>
+        <div class="hiw-card">
+          <div class="hiw-icon">🌐</div>
+          <h3>4. Compare</h3>
+          <p>Results upload here. See how your AV compares globally.</p>
+        </div>
+      </div>
+
+      <div class="warning-callout">
+        🛡️ <strong>Your antivirus may flag this tool</strong> —
+        AV-Unitest simulates attack techniques to test your AV.
+        This is intentional and safe.
+        <a href="#how-to-whitelist">How to whitelist →</a>
+      </div>
+      <div class="disclaimer-callout">
+        ⚠️ <strong>Disclaimer:</strong> We strongly recommend running AV-Unitest on
+        virtual machines or dedicated test devices — not your personal machine.
+      </div>
+    </section>
+
+    <!-- SECTION: GLOBAL RESULTS -->
+    <div class="section-divider">
+      📊 <span>Global Results Dashboard</span>
+    </div>
 
     <!-- Alert if API unreachable -->
     <div id="alert-banner">
@@ -1147,9 +1295,14 @@
   </div>
 
   <!-- FOOTER -->
-  <footer>
-    AV Benchmark Tool &nbsp;|&nbsp; Server: <span>192.168.1.121</span> &nbsp;|&nbsp;
-    Data from <span>av_benchmarks.sqlite</span>
+  <footer id="how-to-whitelist">
+    <strong>AV-Unitest</strong> &nbsp;|&nbsp; Modular Antivirus Benchmark Platform
+    &nbsp;|&nbsp; © 2026 Shazali &nbsp;|&nbsp; <span>GPL-3.0</span>
+    <br>
+    <small style="color:var(--text-muted);margin-top:4px;display:block">
+      To whitelist: add AV-Unitest.exe to your antivirus exclusion list.
+      Defender: Settings → Virus Protection → Exclusions → Add the .exe
+    </small>
   </footer>
 
   <!-- ─── JavaScript ─────────────────────────────────────────── -->

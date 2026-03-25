@@ -1,3 +1,5 @@
+# AV-Unitest — Modular Antivirus Benchmark Platform
+# Copyright (c) 2026 Shazali. Licensed under GPL-3.0.
 """
 Module Manager - Dynamically discovers and executes test modules
 """
@@ -22,65 +24,106 @@ class ModuleManager:
         self.modules_dir = modules_dir
         self.modules: List = []
         self.results: List[Dict] = []
-        
+        self._config = self._load_config()
+
+    def _load_config(self) -> dict:
+        """
+        Load modules_config.json from next to the executable (or cwd).
+        Config controls which built-in modules are active.
+        """
+        import json
+        defaults = {
+            "disabled_modules": [],
+            "external_modules_only": False,
+        }
+        # Look for config next to .exe or in cwd
+        for base in [os.path.dirname(sys.executable), os.getcwd()]:
+            cfg_path = os.path.join(base, 'modules_config.json')
+            if os.path.exists(cfg_path):
+                try:
+                    with open(cfg_path, 'r') as f:
+                        defaults.update(json.load(f))
+                    print(f"[ModuleManager] Config loaded: {cfg_path}")
+                except Exception as e:
+                    print(f"[ModuleManager] Config error: {e}")
+                break
+        return defaults
+
+    def _scan_folder(self, folder_path: str, label: str) -> list:
+        """Scan a directory for module_* subfolders."""
+        found = []
+        if not os.path.exists(folder_path):
+            return found
+        for item in os.listdir(folder_path):
+            item_path = os.path.join(folder_path, item)
+            if os.path.isdir(item_path) and item.startswith('module_'):
+                module_py = os.path.join(item_path, 'module.py')
+                if os.path.exists(module_py):
+                    found.append((item, module_py, label))
+        return sorted(found, key=lambda x: x[0])
+
     def discover_modules(self):
         """
-        Dynamically discover all modules in the modules directory
-        Modules must be in folders matching pattern: module_*
+        Dynamically discover modules from:
+          1. Built-in modules/ directory (internal)
+          2. External modules/ folder next to .exe (user-added)
+        Respects modules_config.json for disabling/filtering.
         """
         self.modules = []
-        
-        if not os.path.exists(self.modules_dir):
-            print(f"[ModuleManager] Modules directory not found: {self.modules_dir}")
-            return
-            
-        # Get all module folders
-        module_folders = []
-        for item in os.listdir(self.modules_dir):
-            item_path = os.path.join(self.modules_dir, item)
-            if os.path.isdir(item_path) and item.startswith('module_'):
-                module_folders.append(item)
-                
-        # Sort folders to determine execution order
-        module_folders.sort()
-        
-        print(f"[ModuleManager] Found {len(module_folders)} module(s)")
-        
+        cfg = self._config
+        disabled = set(cfg.get('disabled_modules', []))
+        external_only = cfg.get('external_modules_only', False)
+
+        all_found = []
+
+        # 1. Internal (built-in) modules
+        if not external_only:
+            internal = self._scan_folder(self.modules_dir, 'internal')
+            for name, path, label in internal:
+                if name not in disabled:
+                    all_found.append((name, path, label))
+                else:
+                    print(f"[ModuleManager] Skipping disabled: {name}")
+
+        # 2. External modules (next to .exe or cwd)
+        for base in [os.path.dirname(sys.executable), os.getcwd()]:
+            ext_dir = os.path.join(base, 'modules')
+            if ext_dir != os.path.abspath(self.modules_dir):
+                external = self._scan_folder(ext_dir, 'external')
+                for name, path, label in external:
+                    # Don't duplicate if same name as internal
+                    if not any(n == name for n, _, _ in all_found):
+                        all_found.append((name, path, label))
+
+        print(f"[ModuleManager] Found {len(all_found)} module(s)")
+
         # Load each module
-        for idx, folder in enumerate(module_folders, start=1):
+        for idx, (folder, module_path, label) in enumerate(all_found, start=1):
             try:
-                module_path = os.path.join(self.modules_dir, folder, 'module.py')
-                
-                if not os.path.exists(module_path):
-                    print(f"[ModuleManager] Warning: {folder}/module.py not found, skipping")
-                    continue
-                    
-                # Load module dynamically
                 spec = importlib.util.spec_from_file_location(f"{folder}.module", module_path)
                 module = importlib.util.module_from_spec(spec)
                 sys.modules[f"{folder}.module"] = module
                 spec.loader.exec_module(module)
-                
-                # Find the module class (should inherit from BaseModule)
+
+                # Find the module class
                 module_class = None
                 for name in dir(module):
                     obj = getattr(module, name)
                     if isinstance(obj, type) and name.endswith('Module') and name != 'BaseModule':
                         module_class = obj
                         break
-                        
+
                 if module_class:
-                    # Instantiate module and assign ID
                     module_instance = module_class()
                     module_instance.set_module_id(idx)
                     self.modules.append(module_instance)
-                    print(f"[ModuleManager] Loaded: {folder} (ID: {idx})")
+                    print(f"[ModuleManager] Loaded [{label}]: {folder} (ID: {idx})")
                 else:
                     print(f"[ModuleManager] Warning: No module class found in {folder}")
-                    
+
             except Exception as e:
                 print(f"[ModuleManager] Error loading {folder}: {e}")
-                
+
         print(f"[ModuleManager] Successfully loaded {len(self.modules)} module(s)")
         
     def run_modules(self, progress_callback=None) -> List[Dict]:

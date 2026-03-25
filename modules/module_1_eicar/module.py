@@ -1,3 +1,5 @@
+# AV-Unitest — Modular Antivirus Benchmark Platform
+# Copyright (c) 2026 Shazali. Licensed under GPL-3.0.
 """
 Module 1: EICAR Test
 Generates EICAR test file and monitors for antivirus detection.

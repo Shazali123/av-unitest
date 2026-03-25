@@ -1,3 +1,5 @@
+# AV-Unitest — Modular Antivirus Benchmark Platform
+# Copyright (c) 2026 Shazali. Licensed under GPL-3.0.
 """
 Module 3: ATT&CK Simulation
 Phase 3 — 5 real MITRE ATT&CK technique tests designed to be
