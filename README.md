@@ -2,7 +2,7 @@
 
 Modern, automated GUI application for benchmarking and scoring antivirus software capabilities across multiple attack layers. Designed with modularity and realistic simulation in mind.
 
-## 🚀 Key Features
+## Key Features
 
 - **Public Release (.exe Download)**: The entire platform is distributed as a pre-compiled standalone `.exe` available on the [Releases](#) page. No Python setup required!
 - **Extensible Modularity without Recompilation**: Designed so the compiled `.exe` can be fully configured externally. You can drop new folders into the `modules/` directory, and the application will dynamically discover and load them without ever needing to recompile the core base.
@@ -14,7 +14,7 @@ Modern, automated GUI application for benchmarking and scoring antivirus softwar
 
 ---
 
-## 🏗 The 4-Layer Evaluation Stack
+## The 4-Layer Evaluation Stack
 
 ### Layer 1: Static Signatures (EICAR)
 Drops the standard EICAR test string to disk to evaluate baseline static scanning.
@@ -33,7 +33,7 @@ Deploys 5 live techniques directly mapped to the MITRE ATT&CK framework:
 | T1105     | EICAR string saved as `.exe` on disk | Real-time file scanner |
 | T1082     | Sysinfo recon → base64 stage → loopback exfil POST | Behavioural chain |
 
-### Layer 4: ABAE Behavioral Engine ✅ FUNCTIONAL
+### Layer 4: ABAE Behavioral Engine 
 Signature-independent behavioral anomaly detection — 5 tests, no external tools. ABAE leverages "Sacrificial Lamb" architecture, passing obfuscated script chains to AMSI without relying on Python interpreters.
 
 | Test | Dimension | Detection Signal |
@@ -46,7 +46,7 @@ Signature-independent behavioral anomaly detection — 5 tests, no external tool
 
 ---
 
-## 🔒 Security Practices & Development Steps
+## Security Practices & Development Steps
 
 Building a safe benchmarking tool requires strict compartmentalization to prevent actual system harm while simulating malicious behaviors.
 
@@ -71,7 +71,7 @@ Building a safe benchmarking tool requires strict compartmentalization to preven
 
 ---
 
-## 📦 Project Structure
+## Project Structure
 
 ```text
 AV-Unitest/
@@ -91,7 +91,7 @@ AV-Unitest/
 
 ---
 
-## 💻 Installation & Usage
+## Installation & Usage
 
 **Method 1: Pre-Compiled (Recommended)**
 1. Navigate to the **Releases** section of this repository.
@@ -115,7 +115,7 @@ python main.py
 The GoPhish module currently runs in Standalone mode by default. To run it securely in Live mode, update `modules/module_2_gophish/gophish_config.json` with your real endpoint IP and API keys.
 
 ---
-## 📝 License
+## License
 
 **License:** Licensed under GPL-3.0.
 
