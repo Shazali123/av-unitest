@@ -4,7 +4,7 @@ Modern, automated GUI application for benchmarking and scoring antivirus softwar
 
 ## Key Features
 
-- **Public Release (.exe Download)**: The entire platform is distributed as a pre-compiled standalone `.exe` available on the [Releases](#) page. No Python setup required!
+- **Public Release (.exe Download)**: The entire platform is distributed as a pre-compiled standalone `.exe` available on the Releases page. No Python setup required!
 - **Extensible Modularity without Recompilation**: Designed so the compiled `.exe` can be fully configured externally. You can drop new folders into the `modules/` directory, and the application will dynamically discover and load them without ever needing to recompile the core base.
 - **Centralized Public Dashboard**: After completing a benchmark, clicking "Upload to Server" securely transmits the telemetry and physical scores to an external PHP/SQLite backend. The data is instantly sorted and visualized on a public comparison dashboard: [**https://shazali123.pythonanywhere.com/**](https://shazali123.pythonanywhere.com/)
   - *⚠️ Disclaimer: Only benchmark runs completed with all 4 Core Modules can be successfully uploaded to the central server to maintain scoring integrity.*
