@@ -1086,7 +1086,7 @@
         An open-source, modular antivirus benchmark that tests your AV across 4 layers:
         EICAR signatures, phishing simulation, MITRE ATT&amp;CK techniques, and behavioral anomaly detection.
       </p>
-      <p class="hero-version">v1.0.0 · GPL-3.0 · Windows 10/11</p>
+      <p class="hero-version">v1.2.0 · GPL-3.0 · Windows 10/11</p>
       <a href="https://github.com/Shazali123/av-unitest/releases/latest" class="download-btn" id="download-btn">
         ⬇ Download AV-Unitest.exe
       </a>
@@ -1328,8 +1328,16 @@
 
     function fmtDate(ts) {
       if (!ts) return '—';
-      const d = new Date(ts.replace(' ', 'T') + 'Z');
-      return d.toLocaleString();
+      try {
+        // New ISO-8601 offset format (e.g. "2026-03-25T22:00:00+08:00")
+        if (ts.includes('T')) return new Date(ts).toLocaleString();
+        
+        // Old format fallback: "YYYY-MM-DD HH:MM:SS"
+        // Replace space with T to create valid local ISO string
+        return new Date(ts.replace(' ', 'T')).toLocaleString();
+      } catch (e) {
+        return ts;
+      }
     }
 
     function setStatus(msg, ok = true) {

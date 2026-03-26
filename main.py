@@ -14,7 +14,7 @@ import av_detector
 from module_manager import ModuleManager
 from results_handler import ResultsHandler
 
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.2.0"
 
 
 # ---------------------------------------------------------------------------
@@ -98,7 +98,14 @@ class BenchmarkApp(ctk.CTk):
             with urllib.request.urlopen(req, timeout=5) as resp:
                 data = json.loads(resp.read().decode())
             latest = data.get('version', APP_VERSION)
-            if latest != APP_VERSION:
+            
+            def parse_ver(v_str):
+                try:
+                    return tuple(int(x) for x in str(v_str).strip('v').split('.'))
+                except ValueError:
+                    return (0, 0, 0)
+                    
+            if parse_ver(latest) > parse_ver(APP_VERSION):
                 self._update_info = (latest, data.get('download_url', ''))
                 self.after(0, self._show_update_banner)
         except Exception:
@@ -142,7 +149,7 @@ class BenchmarkApp(ctk.CTk):
             text="AV-Unitest",
             font=ctk.CTkFont(size=36, weight="bold")
         )
-        title.pack(pady=(40, 5))
+        title.pack(pady=(20, 5))
         
         # Subtitle
         subtitle = ctk.CTkLabel(
@@ -158,11 +165,11 @@ class BenchmarkApp(ctk.CTk):
             font=ctk.CTkFont(size=12),
             text_color="gray"
         )
-        version_label.pack(pady=(0, 30))
+        version_label.pack(pady=(0, 15))
         
         # Info card
         info_frame = ctk.CTkFrame(self.main_container)
-        info_frame.pack(pady=20, padx=40, fill="x")
+        info_frame.pack(pady=10, padx=40, fill="x")
         
         # AV detection
         self.av_label = ctk.CTkLabel(
@@ -170,7 +177,7 @@ class BenchmarkApp(ctk.CTk):
             text=f"🛡️ Detected AV: {self.av_name}",
             font=ctk.CTkFont(size=16)
         )
-        self.av_label.pack(pady=15)
+        self.av_label.pack(pady=10)
         
         # Discover modules
         self.module_manager.discover_modules()
@@ -181,19 +188,19 @@ class BenchmarkApp(ctk.CTk):
             text=f"📦 Modules Found: {module_count}",
             font=ctk.CTkFont(size=16)
         )
-        modules_label.pack(pady=15)
+        modules_label.pack(pady=10)
         
         # Module list
         if module_count > 0:
-            modules_list_frame = ctk.CTkFrame(self.main_container)
-            modules_list_frame.pack(pady=20, padx=60, fill="both", expand=True)
+            modules_list_frame = ctk.CTkScrollableFrame(self.main_container, height=160)
+            modules_list_frame.pack(pady=15, padx=60, fill="both")
             
             list_title = ctk.CTkLabel(
                 modules_list_frame,
                 text="Test Modules:",
                 font=ctk.CTkFont(size=16, weight="bold")
             )
-            list_title.pack(pady=(15, 10))
+            list_title.pack(pady=(10, 5))
             
             for module_info in self.module_manager.get_module_list():
                 module_label = ctk.CTkLabel(
@@ -202,7 +209,7 @@ class BenchmarkApp(ctk.CTk):
                     font=ctk.CTkFont(size=14),
                     anchor="w"
                 )
-                module_label.pack(pady=5, padx=20, anchor="w")
+                module_label.pack(pady=3, padx=20, anchor="w")
                 
         # Start button
         start_btn = ctk.CTkButton(
@@ -213,7 +220,7 @@ class BenchmarkApp(ctk.CTk):
             corner_radius=10,
             command=self.start_benchmark
         )
-        start_btn.pack(pady=30)
+        start_btn.pack(pady=15)
         
     def start_benchmark(self):
         """Start benchmark testing"""
@@ -388,7 +395,6 @@ class BenchmarkApp(ctk.CTk):
         )
         export_btn.pack(side="left", padx=10)
         
-        # Upload button
         self._upload_btn = ctk.CTkButton(
             button_frame,
             text="📤 Upload to Server",
@@ -398,6 +404,17 @@ class BenchmarkApp(ctk.CTk):
             command=self.upload_results
         )
         self._upload_btn.pack(side="left", padx=10)
+        
+        # Disable upload if custom modules are detected
+        core_module_ids = {1, 2, 3, 4}
+        has_custom = any(m.get('id') not in core_module_ids for m in self.module_manager.get_module_list())
+        
+        if has_custom:
+            self._upload_btn.configure(
+                state="disabled",
+                text="Upload Disabled\n(Custom Modules)",
+                font=ctk.CTkFont(size=14, weight="bold")
+            )
         
         # Run again button
         again_btn = ctk.CTkButton(

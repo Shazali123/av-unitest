@@ -28,6 +28,13 @@ class ModuleManager:
             # Running as normal script
             self.modules_dir = os.path.abspath(modules_dir)
             
+        # VERY IMPORTANT: When PyInstaller packages the app, base_module.py
+        # exists in sys._MEIPASS/modules, NOT in external dist/AV-Unitest/modules.
+        # So we must add the internal modules dir to sys.path so external
+        # modules can do `from base_module import BaseModule` successfully.
+        if self.modules_dir not in sys.path:
+            sys.path.insert(0, self.modules_dir)
+            
         self.modules: List = []
         self.results: List[Dict] = []
         self._config = self._load_config()

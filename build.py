@@ -13,6 +13,7 @@ Output:
 import os
 import sys
 import subprocess
+import shutil
 
 
 def get_resource_path(relative_path):
@@ -27,6 +28,10 @@ def build():
     print("=" * 50)
     print("  AV-Unitest Build Script")
     print("=" * 50)
+
+    print("[BUILD] Cleaning previous build folders (build/, dist/)...")
+    shutil.rmtree('build', ignore_errors=True)
+    shutil.rmtree('dist', ignore_errors=True)
 
     # Ensure PyInstaller is installed
     try:
@@ -81,7 +86,28 @@ def build():
         exe_path = os.path.join('dist', 'AV-Unitest.exe')
         if os.path.exists(exe_path):
             size_mb = os.path.getsize(exe_path) / (1024 * 1024)
-            print(f"\n[BUILD] ✓ SUCCESS: {exe_path} ({size_mb:.1f} MB)")
+            print(f"\n[BUILD] ✓ PyInstaller SUCCESS ({size_mb:.1f} MB)")
+            
+            # --- Auto-Packaging ---
+            print("\n[BUILD] Formatting release package...")
+            release_dir = os.path.join('dist', 'AV-Unitest')
+            os.makedirs(release_dir, exist_ok=True)
+            
+            # Move EXE
+            shutil.move(exe_path, os.path.join(release_dir, 'AV-Unitest.exe'))
+            print("  -> Moved AV-Unitest.exe")
+            
+            # Copy docs and configs
+            for f in ['README.txt', 'LICENSE', 'modules_config.json']:
+                if os.path.exists(f):
+                    shutil.copy2(f, os.path.join(release_dir, f))
+                    print(f"  -> Copied {f}")
+            
+            # Create empty external modules directory
+            os.makedirs(os.path.join(release_dir, 'modules'), exist_ok=True)
+            print("  -> Created empty modules/ directory")
+            
+            print(f"\n[BUILD] ✓ ALL DONE! The folder '{release_dir}' is ready to be zipped/rar'd.")
         else:
             print("\n[BUILD] ✓ Build completed (check dist/ folder)")
     else:

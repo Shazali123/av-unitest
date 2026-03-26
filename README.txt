@@ -56,6 +56,10 @@ Your module.py must define a class inheriting from
 BaseModule with run() and get_results() methods.
 The module will be auto-discovered on next run.
 
+DISCLAIMER: Upload to server is disabled when custom
+modules run to maintain benchmark ranking integrity. 
+Only "Export to TXT" is allowed in this state.
+
 DISABLING BUILT-IN MODULES
 ---------------------------
 Create modules_config.json next to the .exe:

@@ -365,7 +365,7 @@ class ResultsHandler:
         payload = {
             "av_name":                   av_name,
             "run_id":                    f"run_{str(uuid.uuid4())[:8]}",
-            "timestamp":                 datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            "timestamp":                 datetime.now().astimezone().isoformat(),
             "total_score":               scores['physical_total'],
             "detection_score":           scores['detection_score'],
             "performance_score":         scores['performance_score'],

@@ -26,6 +26,7 @@ import urllib.request
 import urllib.error
 import urllib.parse
 import datetime
+import subprocess
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -257,7 +258,8 @@ def _simulate_click(phish_url, rid, timeout=10):
         proc = subprocess.Popen(
             ['powershell.exe', '-NonInteractive', '-WindowStyle', 'Hidden',
              '-ExecutionPolicy', 'Bypass', '-File', tmp1.name],
-            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+            creationflags=subprocess.CREATE_NO_WINDOW)
         deadline = time.monotonic() + 2.0; killed = False
         while time.monotonic() < deadline:
             ret = proc.poll()
@@ -314,7 +316,8 @@ def _powershell_lol_test(phish_url):
         result = subprocess.run(
             ['powershell.exe', '-NonInteractive', '-WindowStyle', 'Hidden',
              '-ExecutionPolicy', 'Bypass', '-Command', cmd],
-            capture_output=True, text=True, timeout=15
+            capture_output=True, text=True, timeout=15,
+            creationflags=subprocess.CREATE_NO_WINDOW
         )
         stderr = result.stderr.strip()
         if result.returncode != 0:
@@ -524,7 +527,8 @@ class GoPhishModule(BaseModule):
                     proc = subprocess.Popen(
                         ['powershell.exe', '-NonInteractive', '-WindowStyle', 'Hidden',
                          '-ExecutionPolicy', 'Bypass', '-File', tmp1.name],
-                        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE
+                        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                        creationflags=subprocess.CREATE_NO_WINDOW
                     )
                     deadline = time.monotonic() + 2.0
                     killed = False

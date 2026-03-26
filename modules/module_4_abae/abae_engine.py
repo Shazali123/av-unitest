@@ -132,6 +132,7 @@ def _query_defender_events(since_epoch: float) -> list:
             ["powershell.exe", "-NoProfile", "-NonInteractive",
              "-Command", ps_cmd],
             capture_output=True, text=True, timeout=10,
+            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
         )
         out = (result.stdout or "").strip()
         if out:
@@ -183,6 +184,7 @@ def _query_thirdparty_av_events(since_epoch: float) -> list:
             ["powershell.exe", "-NoProfile", "-NonInteractive",
              "-Command", ps_cmd],
             capture_output=True, text=True, timeout=12,
+            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
         )
         out = (result.stdout or "").strip()
         if out:
@@ -258,6 +260,7 @@ def _run_ps1_sacrificial(
             capture_output=True,
             text=True,
             timeout=timeout,
+            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
         )
 
         stdout       = result.stdout or ""
