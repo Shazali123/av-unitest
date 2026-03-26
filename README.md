@@ -35,7 +35,7 @@ Spawn suspicious processes.
 
 Trigger Antivirus "Heuristic" or "HackTool" alerts.
 
-We strongly recommend using VirtualBox, VMware, or Hyper-V. The author is not responsible for unintended side effects on production systems.
+I strongly recommend using VirtualBox, VMware, or Hyper-V. The author is not responsible for unintended side effects on production systems.
 
 ## Configuration & Customization
 Disabling Modules
