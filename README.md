@@ -1,61 +1,29 @@
-# AV Benchmark Testing Framework — Phase 5
+# AV-Unitest — Open-Source Modular Antivirus Benchmarking Platform
 
-Modern GUI application for benchmarking antivirus software across four test layers with weighted scoring and server upload.
+Modern, automated GUI application for benchmarking and scoring antivirus software capabilities across multiple attack layers. Designed with modularity and realistic simulation in mind.
 
-## Quick Start
+## 🚀 Key Features
 
-```powershell
-python main.py
-```
-
-## Features
-
-- ✅ **GUI Interface** — Modern dark theme using CustomTkinter
-- ✅ **Antivirus Detection** — Automatically detects installed AV
-- ✅ **Dynamic Modules** — Add modules without code changes
-- ✅ **System Monitoring** — Tracks CPU, RAM, Disk I/O per module
-- ✅ **Weighted Scoring** — 8-point Physical Score computed after every run
-- ✅ **Results Export** — Saves detailed reports to TXT files
-- ✅ **Upload to Server** — POSTs results to Ubuntu SQLite via PHP API
+- **Public Release (.exe Download)**: The entire platform is distributed as a pre-compiled standalone `.exe` available on the [Releases](#) page. No Python setup required!
+- **Extensible Modularity without Recompilation**: Designed so the compiled `.exe` can be fully configured externally. You can drop new folders into the `modules/` directory, and the application will dynamically discover and load them without ever needing to recompile the core base.
+- **Centralized Public Dashboard**: After completing a benchmark, clicking "Upload to Server" securely transmits the telemetry and physical scores to an external PHP/SQLite backend. The data is instantly sorted and visualized on a public comparison dashboard: [**https://shazali123.pythonanywhere.com/**](https://shazali123.pythonanywhere.com/)
+  - *⚠️ Disclaimer: Only benchmark runs completed with all 4 Core Modules can be successfully uploaded to the central server to maintain scoring integrity.*
+- **4-Layer Attack Simulation Stack**: Accurately tests AV from basic signatures to advanced runtime behaviors.
+- **Weighted Performance Scoring**: Computes a total 10-point physical score using real-time resource impacts (CPU, RAM, Disk I/O latency) and detection efficiency.
+- **Automated AV Detection**: Uses Windows WMI queries to identify the installed Antivirus automatically.
 
 ---
 
-## The 4-Layer Evaluation Stack
+## 🏗 The 4-Layer Evaluation Stack
 
-| Layer | Module | What It Measures |
-|-------|--------|----------------|
-| 1 | EICAR Test | Basic signature functionality |
-| 2 | GoPhish Simulation | User-layer phishing attack resilience |
-| 3 | ATT&CK Simulation | Advanced attack technique detection |
-| 4 | ABAE Behavioral Engine | Unknown behavioral anomaly defense |
+### Layer 1: Static Signatures (EICAR)
+Drops the standard EICAR test string to disk to evaluate baseline static scanning.
 
----
+### Layer 2: Phishing Simulation (GoPhish)
+Automates HTTP GET/POST interactions to simulate victim clicks. Currently, this runs in **standalone mode** locally to safely mimic the behavior of a phishing attack via an L0–L3 heuristic escalation. However, it can seamlessly be linked to a live GoPhish server if wanted to test network filtering and real-time remote telemetry.
 
-## Scoring Model (Physical Score — 8 pts)
-
-> Usability score (2 pts) is added separately by the comparison website. Total = 10 pts.
-
-| Component | Max | Logic |
-|-----------|-----|-------|
-| **Detection Score** | 5 pts | `(modules_detected / total) × 3` + `max(0, 2 − best_latency_s × 0.15)` |
-| **Performance Score** | 3 pts | Start at 3.0, deduct: `cpu_avg × 0.015` + `ram_peak_mb × 0.005` + `disk_write_mb × 0.002` |
-
-Scores appear at the bottom of every TXT report and in the upload payload.
-
----
-
-## Modules
-
-### Module 1: EICAR Test ✅ FUNCTIONAL
-Standard signature detection test using the EICAR test file.
-
-### Module 2: GoPhish Phishing Simulation ✅ FUNCTIONAL
-Live phishing simulation against a GoPhish server (Ubuntu VM). Campaign data preserved as evidence.
-
-Configure: `modules/module_2_gophish/gophish_config.json`
-
-### Module 3: ATT&CK Simulation ✅ FUNCTIONAL
-5 live MITRE ATT&CK technique tests (Python stdlib only).
+### Layer 3: MITRE ATT&CK TTPs
+Deploys 5 live techniques directly mapped to the MITRE ATT&CK framework:
 
 | ATT&CK ID | Technique | AV Target |
 |-----------|-----------|-----------|
@@ -65,114 +33,91 @@ Configure: `modules/module_2_gophish/gophish_config.json`
 | T1105     | EICAR string saved as `.exe` on disk | Real-time file scanner |
 | T1082     | Sysinfo recon → base64 stage → loopback exfil POST | Behavioural chain |
 
-### Module 4: ABAE Behavioral Engine ✅ FUNCTIONAL
-Signature-independent behavioral anomaly detection — 5 tests, no external tools.
+### Layer 4: ABAE Behavioral Engine ✅ FUNCTIONAL
+Signature-independent behavioral anomaly detection — 5 tests, no external tools. ABAE leverages "Sacrificial Lamb" architecture, passing obfuscated script chains to AMSI without relying on Python interpreters.
 
 | Test | Dimension | Detection Signal |
-|------|-----------|-----------------|
+|------|-----------|------------------|
 | B-01 | Rapid File Manipulation | `PermissionError` on file write/rename during 300-file churn |
 | B-02 | Entropy Spike Simulation | AV blocks `os.urandom()` writes (≥7.5 Shannon bits/byte) |
 | B-03 | Process Burst Activity | Subprocess spawn denied or file I/O storm blocked |
 | B-04 | Registry Modification | `WindowsError` on `HKCU\Software\ABAE_*` write |
 | B-05 | Behavioral Consistency | AV detects in majority of 3 repeated variation runs |
 
-**PASS criteria:** ≥ 3 of 5 detected (configurable in `abae_config.json`).
+---
+
+## 🔒 Security Practices & Development Steps
+
+Building a safe benchmarking tool requires strict compartmentalization to prevent actual system harm while simulating malicious behaviors.
+
+### Development Steps Taken
+1. **Initial Foundation**: Built the CustomTkinter GUI alongside `module_manager.py` to allow isolated feature development.
+2. **Dynamic Compilation Management**: Overcame deployment challenges by injecting specific Windows subsystem flags during PyInstaller compilation to ensure hidden console windows (stealth operations) while keeping the dynamic `modules` loading fully external.
+3. **Behavioral Engine Design (ABAE)**: Identified the "Interpreter Shield" flaw (where Python.exe is whitelisted by AVs). Resolved this by designing PowerShell-driven behavioral executions fed directly into AMSI.
+4. **Telemetry & Scoring**: Integrated `score_calculator.py` and real-time process monitoring via `psutil` to observe AV resource starvation.
+5. **Full Stack Integration**: Designed the ingestion API (`upload_results.php`, `get_results.php`) mapped to a SQLite database. Linked it dynamically to the live public comparison site on PythonAnywhere.
+
+### Web Security Practices Employed (OWASP Top 10)
+- **Data Validation & Sanitization**: The upload pipeline serializes data securely into JSON and strictly validates data types before insertion into the SQLite database. 
+  - *Deters: **OWASP A03:2021 - Injection (SQLi)***
+- **Secure Secret Management**: Hardcoded IPs and sensitive API tokens (e.g., GoPhish keys) were scrubbed from all configuration files and replaced with placeholder variables prior to publication.
+  - *Deters: **OWASP A07:2021 - Identification and Authentication Failures / Hardcoded Credentials***
+- **Dependency Minimization**: Implemented Python standard library modules (`urllib`, `ssl`) wherever possible rather than downloading external PIP packages.
+  - *Deters: **OWASP A06:2021 - Vulnerable and Outdated Components (Supply-Chain Attacks)***
+- **Robust Fallback Logic & Error Handling**: If the live GoPhish server cannot be reached, the tool degrades gracefully to a heavily-scoped standalone version without throwing application exceptions or leaking stack traces.
+  - *Deters: **OWASP A05:2021 - Security Misconfiguration (Information Exposure)***
+
+*(Note: All payload detonations are also executed in scoped temporary subdirectories and programmatically deleted post-execution to avoid lingering system artifacts).*
 
 ---
 
-## Server Upload (Phase 5)
+## 📦 Project Structure
 
-After each benchmark run, click **📤 Upload to Server** to POST results to the Ubuntu server.
-
-### Python side
-- `score_calculator.py` — computes the 8-pt Physical Score from all module metrics
-- `results_handler.py` — `build_upload_payload()` + `upload_to_server()` stringify and POST the data
-- `main.py` — upload button, background thread, success/fail popup
-
-### Server side (`server/` directory)
-| File | Deploy to Ubuntu | Purpose |
-|------|-----------------|---------|
-| `upload_results.php` | `/var/www/html/upload_results.php` | Receives POST, inserts into SQLite |
-| `get_results.php`    | `/var/www/html/get_results.php`    | Comparison website data API |
-
-Server URL configured in `main.py`:
-```python
-SERVER_URL = "http://PUT_YOUR_SERVER_IP_HERE:8090/upload_results.php"
-```
-
-#### SQLite Schema
-```sql
-benchmark_results (id, run_id, av_name, timestamp,
-  detection_score, performance_score, physical_total,
-  eicar_detected, gophish_detected, atomic_detected, abae_detected, abae_verdict,
-  best_detection_latency_s, cpu_avg, ram_peak_mb, disk_write_mb, raw_json)
-```
-
-#### Comparison website API
-```
-GET http://PUT_YOUR_SERVER_IP_HERE:8090/get_results.php            → all results (newest first)
-GET http://PUT_YOUR_SERVER_IP_HERE:8090/get_results.php?av_name=Defender
-GET http://PUT_YOUR_SERVER_IP_HERE:8090/get_results.php?run_id=run_abc123
-GET http://PUT_YOUR_SERVER_IP_HERE:8090/get_results.php?limit=5&order=asc
-```
-
----
-
-## Installation
-
-```powershell
-pip install -r requirements.txt
-```
-
-## Project Structure
-
-```
-Major Project/
-├── main.py                    # GUI application
-├── module_manager.py          # Dynamic module discovery
-├── system_monitor.py          # Performance tracking
-├── av_detector.py             # Antivirus detection
-├── score_calculator.py        # Weighted scoring engine
-├── results_handler.py         # Results compilation, export, upload
-├── modules/
+```text
+AV-Unitest/
+├── main.py                    # Core GUI application
+├── module_manager.py          # Dynamic module discovery logic
+├── system_monitor.py          # Real-time resource impact tracking
+├── SCORE_LOGIC                # 10-point heuristic scoring
+├── modules/                   # Extensible Modules Directory (External to the EXE)
 │   ├── base_module.py
-│   ├── module_1_eicar/        # EICAR signature test
-│   ├── module_2_gophish/      # GoPhish phishing simulation
-│   ├── module_3_atomic/       # MITRE ATT&CK simulation
-│   └── module_4_abae/         # Adaptive Behavioral Anomaly Engine
-│       ├── module.py
-│       ├── abae_engine.py
-│       └── abae_config.json
-├── server/                    # Deploy these to Ubuntu
-│   ├── upload_results.php
-│   └── get_results.php
-└── results/                   # Exported TXT reports
+│   ├── module_1_eicar/
+│   ├── module_2_gophish/      # Phishing heuristics & Live HTTP
+│   ├── module_3_atomic/       # MITRE mapped TTPs
+│   └── module_4_abae/         # Adaptive Behavioral tests
+├── server/                    # PHP + SQLite API definitions
+└── results/                   # Auto-generated TXT summaries
 ```
 
-## Requirements
+---
 
-- Python 3.11+
-- Windows 10 / 11
-- CustomTkinter ≥ 5.2.0
-- psutil ≥ 5.9.0
-- WMI ≥ 1.5.1
+## 💻 Installation & Usage
 
-## Phase Status
+**Method 1: Pre-Compiled (Recommended)**
+1. Navigate to the **Releases** section of this repository.
+2. Download the compressed `.zip` containing the `AV-Unitest.exe` and `modules/` folder.
+3. Extract and double-click `AV-Unitest.exe` to run.
 
-| Phase | Scope | Status |
-|-------|-------|--------|
-| Phase 1 | GUI + EICAR | ✅ Complete |
-| Phase 2 | GoPhish phishing simulation | ✅ Complete |
-| Phase 3 | ATT&CK simulation (5 techniques) | ✅ Complete |
-| Phase 4 | ABAE behavioral engine (5 tests) | ✅ Complete |
-| Phase 5 | Scoring + server upload (SQLite/PHP) | ✅ Complete |
-| Phase 6 | Comparison website frontend | 🔲 Planned |
+**Method 2: Source Code**
+```powershell
+# 1. Clone the repository
+git clone https://github.com/Shazali123/av-unitest.git
+cd av-unitest
 
-## License
+# 2. Install dependencies
+pip install -r requirements.txt
 
-Educational Project — UNITAR Learn
+# 3. Launch the Application
+python main.py
+```
 
+### Config Notes
+The GoPhish module currently runs in Standalone mode by default. To run it securely in Live mode, update `modules/module_2_gophish/gophish_config.json` with your real endpoint IP and API keys.
 
+---
+## 📝 License
 
+**License:** Licensed under GPL-3.0.
 
-Educational Project — UNITAR Learn
+Developer: **Shazali Shaukhi**  
+Created as part of Major Project | UNITAR Learn
