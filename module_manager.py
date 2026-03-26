@@ -48,6 +48,7 @@ class ModuleManager:
         defaults = {
             "disabled_modules": [],
             "external_modules_only": False,
+            "core_modules_only": False,
         }
         # Look for config next to .exe or in cwd
         for base in [os.path.dirname(sys.executable), os.getcwd()]:
@@ -98,15 +99,18 @@ class ModuleManager:
                 else:
                     print(f"[ModuleManager] Skipping disabled: {name}")
 
+        core_only = cfg.get('core_modules_only', False)
+
         # 2. External modules (next to .exe or cwd)
-        for base in [os.path.dirname(sys.executable), os.getcwd()]:
-            ext_dir = os.path.join(base, 'modules')
-            if ext_dir != os.path.abspath(self.modules_dir):
-                external = self._scan_folder(ext_dir, 'external')
-                for name, path, label in external:
-                    # Don't duplicate if same name as internal
-                    if not any(n == name for n, _, _ in all_found):
-                        all_found.append((name, path, label))
+        if not core_only:
+            for base in [os.path.dirname(sys.executable), os.getcwd()]:
+                ext_dir = os.path.join(base, 'modules')
+                if ext_dir != os.path.abspath(self.modules_dir):
+                    external = self._scan_folder(ext_dir, 'external')
+                    for name, path, label in external:
+                        # Don't duplicate if same name as internal
+                        if not any(n == name for n, _, _ in all_found):
+                            all_found.append((name, path, label))
 
         print(f"[ModuleManager] Found {len(all_found)} module(s)")
 

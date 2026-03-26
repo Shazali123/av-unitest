@@ -97,15 +97,68 @@ def build():
             shutil.move(exe_path, os.path.join(release_dir, 'AV-Unitest.exe'))
             print("  -> Moved AV-Unitest.exe")
             
-            # Copy docs and configs
-            for f in ['README.txt', 'LICENSE', 'modules_config.json']:
+            # Copy docs
+            for f in ['README.txt', 'LICENSE']:
                 if os.path.exists(f):
                     shutil.copy2(f, os.path.join(release_dir, f))
                     print(f"  -> Copied {f}")
             
-            # Create empty external modules directory
-            os.makedirs(os.path.join(release_dir, 'modules'), exist_ok=True)
-            print("  -> Created empty modules/ directory")
+            # Generate pristine default config for the release package
+            with open(os.path.join(release_dir, 'modules_config.json'), 'w') as f:
+                f.write('{\n  "disabled_modules": [],\n  "external_modules_only": false,\n  "core_modules_only": true\n}\n')
+            print("  -> Generated pristine modules_config.json")
+            
+            # Create external module boilerplate
+            custom_mod_dir = os.path.join(release_dir, 'modules', 'module_5_custom')
+            os.makedirs(custom_mod_dir, exist_ok=True)
+            with open(os.path.join(custom_mod_dir, 'module.py'), 'w', encoding='utf-8') as f:
+                f.write('''import sys
+import os
+import time
+from base_module import BaseModule
+
+class CustomModule(BaseModule):
+    def __init__(self):
+        super().__init__()
+        self.name = "Custom Placeholder Module"
+        self.description = "Placeholder test module. Empty EICAR-like shell."
+        self.status = "Pending"
+
+    def get_info(self):
+        return {"id": self.module_id, "name": self.name, "description": self.description}
+
+    def run(self, monitor):
+        print("[*] Running custom placeholder...")
+        print("[!] DISCLAIMER: This is a placeholder external module.")
+        print("[*] Simulating dummy EICAR payload...")
+        try:
+            with open("custom_dummy.txt", "w") as f:
+                f.write("X5O!P%@AP[4\\\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*")
+            time.sleep(2)
+            if os.path.exists("custom_dummy.txt"):
+                os.remove("custom_dummy.txt")
+                self.status = "Allowed"
+                print("[-] Payload was ignored by AV.")
+            else:
+                self.status = "Blocked"
+                print("[+] Payload was quarantined by AV!")
+        except Exception as e:
+            self.status = "Blocked"
+            print(f"[+] Payload action prevented by AV/OS: {e}")
+            
+        return True
+
+    def get_results(self):
+        return {
+            "id": self.module_id,
+            "name": self.name,
+            "status": self.status,
+            "detected": self.status == "Blocked",
+            "score": 1.0 if self.status == "Blocked" else 0.0
+        }
+''')
+            
+            print("  -> Scaffolded module_5_custom/ development template")
             
             print(f"\n[BUILD] ✓ ALL DONE! The folder '{release_dir}' is ready to be zipped/rar'd.")
         else:

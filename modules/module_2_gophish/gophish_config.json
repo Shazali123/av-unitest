@@ -1,6 +1,6 @@
 {
-  "host": "https://192.168.1.121:3333",
-  "api_key": "b983e8fbda735eb014e8bd0025189da2a6b3dbf732c6a06e3833e09173da1894",
+  "host": "https://PUT_YOUR_GOPHISH_IP_HERE:3333",
+  "api_key": "PUT_YOUR_API_KEY_HERE",
   "campaign_name": "AV_Benchmark_Test",
   "smtp_profile": "Internal Test SMTP",
   "email_template": "Phishing Test Email",

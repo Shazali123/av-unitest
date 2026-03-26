@@ -886,8 +886,9 @@ class GoPhishModule(BaseModule):
             # Check if user has configured a live GoPhish server
             has_gophish = (
                 cfg.get('api_key', '').strip()
-                and cfg.get('api_key', '') not in ('YOUR_API_KEY_HERE', '')
+                and cfg.get('api_key', '') not in ('YOUR_API_KEY_HERE', 'PUT_YOUR_API_KEY_HERE', '')
                 and cfg.get('host', '').strip()
+                and 'PUT_YOUR_GOPHISH_IP_HERE' not in cfg.get('host', '')
                 and not cfg.get('offline_demo_mode', False)
             )
 
@@ -911,6 +912,7 @@ class GoPhishModule(BaseModule):
                     self._run_standalone(m2, start_time)
             else:
                 # Standalone mode (default) — real L0-L3 tests, no server
+                print("[GoPhish] No GoPhish connected, proceeding with standalone mode...")
                 self._run_standalone(monitor, start_time)
 
             return True

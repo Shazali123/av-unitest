@@ -405,14 +405,17 @@ class BenchmarkApp(ctk.CTk):
         )
         self._upload_btn.pack(side="left", padx=10)
         
-        # Disable upload if custom modules are detected
+        # Disable upload if custom modules are detected OR if missing any core modules
         core_module_ids = {1, 2, 3, 4}
-        has_custom = any(m.get('id') not in core_module_ids for m in self.module_manager.get_module_list())
+        loaded_modules = self.module_manager.get_module_list()
         
-        if has_custom:
+        has_custom = any(m.get('id') not in core_module_ids for m in loaded_modules)
+        is_missing_core = not all(core_id in [m.get('id') for m in loaded_modules] for core_id in core_module_ids)
+        
+        if has_custom or is_missing_core:
             self._upload_btn.configure(
                 state="disabled",
-                text="Upload Disabled\n(Custom Modules)",
+                text="Upload Disabled\n(Requires 4 Core Modules)",
                 font=ctk.CTkFont(size=14, weight="bold")
             )
         

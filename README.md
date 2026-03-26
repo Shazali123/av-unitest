@@ -97,7 +97,7 @@ After each benchmark run, click **📤 Upload to Server** to POST results to the
 
 Server URL configured in `main.py`:
 ```python
-SERVER_URL = "http://192.168.1.121:8090/upload_results.php"
+SERVER_URL = "http://PUT_YOUR_SERVER_IP_HERE:8090/upload_results.php"
 ```
 
 #### SQLite Schema
@@ -110,10 +110,10 @@ benchmark_results (id, run_id, av_name, timestamp,
 
 #### Comparison website API
 ```
-GET http://192.168.1.121:8090/get_results.php            → all results (newest first)
-GET http://192.168.1.121:8090/get_results.php?av_name=Defender
-GET http://192.168.1.121:8090/get_results.php?run_id=run_abc123
-GET http://192.168.1.121:8090/get_results.php?limit=5&order=asc
+GET http://PUT_YOUR_SERVER_IP_HERE:8090/get_results.php            → all results (newest first)
+GET http://PUT_YOUR_SERVER_IP_HERE:8090/get_results.php?av_name=Defender
+GET http://PUT_YOUR_SERVER_IP_HERE:8090/get_results.php?run_id=run_abc123
+GET http://PUT_YOUR_SERVER_IP_HERE:8090/get_results.php?limit=5&order=asc
 ```
 
 ---
