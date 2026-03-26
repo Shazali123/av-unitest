@@ -1,4 +1,4 @@
-# AV-Unitest — Open-Source Modular Antivirus Benchmarking Platform
+# AV - Unitest: Open-Source Modular Antivirus Benchmarking Platform
 
 Modern, automated GUI application for benchmarking and scoring antivirus software capabilities across multiple attack layers. Designed with modularity and realistic simulation in mind.
 
