@@ -9,8 +9,6 @@ Serves the dashboard and handles benchmark result uploads.
 import os
 import json
 import logging
-from datetime import datetime
-from functools import wraps
 
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS

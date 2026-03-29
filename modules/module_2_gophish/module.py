@@ -175,7 +175,7 @@ def _make_plain_ssl():
 
 # Quarantine-poll settings (shared by all levels)
 _POLL_INTERVAL = 0.1   # seconds between file-existence checks
-_POLL_WINDOW   = 2.0   # seconds to wait per escalation level
+_POLL_WINDOW   = 5.0   # seconds to wait per escalation level (Increased for Bitdefender/heuristic scans)
 
 
 def _av_poll(filepath):
@@ -260,13 +260,13 @@ def _simulate_click(phish_url, rid, timeout=10):
              '-ExecutionPolicy', 'Bypass', '-File', tmp1.name],
             stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
             creationflags=subprocess.CREATE_NO_WINDOW)
-        deadline = time.monotonic() + 2.0; killed = False
+        deadline = time.monotonic() + _POLL_WINDOW; killed = False
         while time.monotonic() < deadline:
             ret = proc.poll()
             if (ret is not None and ret not in (0, None)) or not os.path.exists(tmp1.name):
                 killed = True; break
             time.sleep(_POLL_INTERVAL)
-        e2 = round(2.0 - max(0.0, deadline - time.monotonic()), 2)
+        e2 = round(_POLL_WINDOW - max(0.0, deadline - time.monotonic()), 2)
         if killed:
             exec_r = {'detected': True, 'latency_s': e2, 'note': 'process killed/file deleted'}
             escalation.update({'level_2_execute': exec_r, 'triggered_level': 2})
@@ -438,9 +438,11 @@ class GoPhishModule(BaseModule):
         """
         Standalone phishing simulation: runs real L0-L3 AV escalation
         tests using the bundled phishing_payload.html.
-        No GoPhish server required — produces real detection results.
+        Now includes a temporary local socket-based HTTP simulation to trigger AV Web Shields.
         """
         import subprocess
+        import socket
+        import threading
 
         print("[GoPhish] ===========================================")
         print("[GoPhish]  STANDALONE MODE — No GoPhish Server")
@@ -465,36 +467,83 @@ class GoPhishModule(BaseModule):
             body = f.read()
         print(f"[GoPhish] Loaded payload: {len(body)} bytes")
 
+        # --- Safe Local HTTP Simulation using raw socket (no top-level discovery impact) ---
+        local_port = 8082
+        try:
+            s_test = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s_test.bind(('127.0.0.1', 0))
+            local_port = s_test.getsockname()[1]
+            s_test.close()
+        except Exception: pass
+
+        def _socket_serve(payload_content, port):
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                    s.bind(('127.0.0.1', port))
+                    s.listen(1)
+                    s.settimeout(15)
+                    conn, addr = s.accept()
+                    with conn:
+                        _ = conn.recv(1024)
+                        response = (
+                            f"HTTP/1.1 200 OK\r\n"
+                            f"Content-Type: text/html\r\n"
+                            f"Content-Length: {len(payload_content)}\r\n"
+                            f"Connection: close\r\n\r\n"
+                            f"{payload_content}"
+                        )
+                        conn.sendall(response.encode('utf-8'))
+            except Exception: pass
+
+        server_thread = threading.Thread(target=_socket_serve, args=(body, local_port), daemon=True)
+        server_thread.start()
+        local_url = f"http://127.0.0.1:{local_port}/phish_test"
+        print(f"[GoPhish] Local simulation server started on {local_url}")
+
         escalation = {
             'level_0_html': None, 'level_1_ps1': None,
             'level_2_execute': None, 'triggered_level': None
         }
 
-        # === Level 0 — .html drop + quarantine poll ===
-        print("[GoPhish] [L0] Dropping .html payload ...")
-        tmp0 = tempfile.NamedTemporaryFile(
-            mode='w', suffix='.html', prefix='phish_page_',
-            delete=False, encoding='utf-8'
-        )
-        tmp0.write(body)
-        tmp0.close()
-        print(f"[GoPhish]   -> {tmp0.name}  (polling {_POLL_WINDOW}s)")
-        q, t = _av_poll(tmp0.name)
-        if q:
-            escalation.update({
-                'level_0_html': {'detected': True, 'latency_s': t},
-                'triggered_level': 0
-            })
-            print(f"[GoPhish] [L0] DETECTED — quarantined in {t}s!")
+        # === Level 0 (Escalated) — Web Request + .html drop ===
+        print("[GoPhish] [L0-Web] Simulating local web 'click' to trigger Web Shield ...")
+        try:
+            req = urllib.request.Request(local_url)
+            req.add_header('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0')
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                if resp.status == 200:
+                    print("[GoPhish]   -> Web request succeeded (not blocked by Web Shield).")
+        except Exception as e:
+            print(f"[GoPhish] [L0-Web] DETECTED — Web request failed/blocked: {e}")
             monitor.mark_detection()
             self.detected = True
-        else:
-            escalation['level_0_html'] = {'detected': False}
-            print("[GoPhish] [L0] Not detected -> escalating to L1 ...")
-            try:
-                os.unlink(tmp0.name)
-            except OSError:
-                pass
+            escalation.update({'level_0_html': {'detected': True, 'note': f'Web request blocked: {e}'}, 'triggered_level': 0})
+
+        # === Level 0 (File) — .html drop + quarantine poll ===
+        if not self.detected:
+            print("[GoPhish] [L0-File] Dropping .html payload ...")
+            tmp0 = tempfile.NamedTemporaryFile(
+                mode='w', suffix='.html', prefix='phish_page_',
+                delete=False, encoding='utf-8'
+            )
+            tmp0.write(body)
+            tmp0.close()
+            print(f"[GoPhish]   -> {tmp0.name}  (polling {_POLL_WINDOW}s)")
+            q, t = _av_poll(tmp0.name)
+            if q:
+                escalation.update({
+                    'level_0_html': {'detected': True, 'latency_s': t},
+                    'triggered_level': 0
+                })
+                print(f"[GoPhish] [L0] DETECTED — quarantined in {t}s!")
+                monitor.mark_detection()
+                self.detected = True
+            else:
+                escalation['level_0_html'] = {'detected': False}
+                print("[GoPhish] [L0] Not detected -> escalating to L1 ...")
+                try: os.unlink(tmp0.name)
+                except OSError: pass
 
         # === Level 1 — .ps1 extension (if L0 didn't trigger) ===
         if not self.detected:
@@ -530,7 +579,7 @@ class GoPhishModule(BaseModule):
                         stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
                         creationflags=subprocess.CREATE_NO_WINDOW
                     )
-                    deadline = time.monotonic() + 2.0
+                    deadline = time.monotonic() + _POLL_WINDOW
                     killed = False
                     while time.monotonic() < deadline:
                         ret = proc.poll()
@@ -538,7 +587,7 @@ class GoPhishModule(BaseModule):
                             killed = True
                             break
                         time.sleep(_POLL_INTERVAL)
-                    e2 = round(2.0 - max(0.0, deadline - time.monotonic()), 2)
+                    e2 = round(_POLL_WINDOW - max(0.0, deadline - time.monotonic()), 2)
                     if killed:
                         exec_r = {'detected': True, 'latency_s': e2, 'note': 'process killed/file deleted'}
                         escalation.update({'level_2_execute': exec_r, 'triggered_level': 2})
@@ -546,12 +595,10 @@ class GoPhishModule(BaseModule):
                         monitor.mark_detection()
                         self.detected = True
                     else:
-                        exec_r['note'] = 'Ran 2s unchallenged'
+                        exec_r['note'] = 'Ran challenged'
                         print("[GoPhish] [L2] Not detected — AV did not intervene.")
-                    try:
-                        proc.kill()
-                    except Exception:
-                        pass
+                    try: proc.kill()
+                    except Exception: pass
                 except Exception as ex:
                     exec_r = {'detected': True, 'latency_s': 0, 'note': f'launch blocked: {ex}'}
                     escalation.update({'level_2_execute': exec_r, 'triggered_level': 2})
@@ -561,16 +608,13 @@ class GoPhishModule(BaseModule):
                 escalation['level_2_execute'] = exec_r
 
             # Cleanup L1 temp file
-            try:
-                os.unlink(tmp1.name)
-            except OSError:
-                pass
+            try: os.unlink(tmp1.name)
+            except OSError: pass
 
-        # === Level 3 — PowerShell Living-off-the-Land (safe URL test) ===
+        # === Level 3 — PowerShell Living-off-the-Land (local URL test) ===
         print("\n[GoPhish] ---- LEVEL 3: POWERSHELL LOL TEST ----")
-        # Use a safe URL for the IWR download test
-        safe_url = "http://example.com"
-        lol_blocked, lol_detail, lol_latency = _powershell_lol_test(safe_url)
+        # Use the local phishing URL to trigger network-based PowerShell heuristics
+        lol_blocked, lol_detail, lol_latency = _powershell_lol_test(local_url)
         if lol_blocked and not self.detected:
             monitor.mark_detection()
             self.detected = True
@@ -634,6 +678,7 @@ class GoPhishModule(BaseModule):
         self.metrics = monitor.get_results()
         self.status = "Completed"
         return True
+
 
     # ------------------------------------------------------------------
     # Live run

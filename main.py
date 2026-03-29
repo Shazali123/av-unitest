@@ -58,16 +58,17 @@ class BenchmarkApp(ctk.CTk):
 
     def __init__(self):
         super().__init__()
-        
+
+        # Set theme globals before constructing widgets
+        ctk.set_appearance_mode("system")
+        ctk.set_default_color_theme("blue")
+
         # Configure window
         self.title(f"AV-Unitest v{APP_VERSION} — Modular AV Benchmark")
-        self.geometry("900x700")
-        self.resizable(False, False)
-        
-        # Set theme
-        ctk.set_appearance_mode("dark")
-        ctk.set_default_color_theme("blue")
-        
+        self.geometry("960x760")
+        self.minsize(860, 660)
+        self.resizable(True, True)
+
         # Initialize components
         self.module_manager = ModuleManager()
         self.results_handler = ResultsHandler()
@@ -129,9 +130,14 @@ class BenchmarkApp(ctk.CTk):
 
     def detect_av(self):
         """Detect antivirus in background"""
-        self.av_name = av_detector.detect_antivirus()
-        if hasattr(self, 'av_label'):
-            self.av_label.configure(text=f"🛡️ Detected AV: {self.av_name}")
+        av_name = av_detector.detect_antivirus()
+
+        def _apply():
+            self.av_name = av_name
+            if hasattr(self, 'av_label'):
+                self.av_label.configure(text=f"Detected AV: {self.av_name}")
+
+        self.after(0, _apply)
             
     def clear_screen(self):
         """Clear current screen"""
@@ -167,6 +173,24 @@ class BenchmarkApp(ctk.CTk):
         )
         version_label.pack(pady=(0, 15))
         
+        # Appearance controls
+        toolbar = ctk.CTkFrame(self.main_container, fg_color="transparent")
+        toolbar.pack(fill="x", padx=40, pady=(4, 6))
+        ctk.CTkLabel(
+            toolbar,
+            text="Theme",
+            font=ctk.CTkFont(size=12),
+            text_color="gray",
+        ).pack(side="right", padx=(0, 8))
+        appearance_menu = ctk.CTkOptionMenu(
+            toolbar,
+            values=["System", "Dark", "Light"],
+            width=120,
+            command=self._on_appearance_change,
+        )
+        appearance_menu.pack(side="right")
+        appearance_menu.set(ctk.get_appearance_mode())
+
         # Info card
         info_frame = ctk.CTkFrame(self.main_container)
         info_frame.pack(pady=10, padx=40, fill="x")
@@ -174,7 +198,7 @@ class BenchmarkApp(ctk.CTk):
         # AV detection
         self.av_label = ctk.CTkLabel(
             info_frame,
-            text=f"🛡️ Detected AV: {self.av_name}",
+            text=f"Detected AV: {self.av_name}",
             font=ctk.CTkFont(size=16)
         )
         self.av_label.pack(pady=10)
@@ -185,7 +209,7 @@ class BenchmarkApp(ctk.CTk):
         
         modules_label = ctk.CTkLabel(
             info_frame,
-            text=f"📦 Modules Found: {module_count}",
+            text=f"Modules Found: {module_count}",
             font=ctk.CTkFont(size=16)
         )
         modules_label.pack(pady=10)
@@ -292,8 +316,7 @@ class BenchmarkApp(ctk.CTk):
         self.console_text = ctk.CTkTextbox(
             console_frame,
             font=ctk.CTkFont(family="Consolas", size=11),
-            width=800,
-            height=320
+            height=260
         )
         self.console_text.pack(pady=(4, 10), padx=10, fill="both", expand=True)
 
@@ -330,16 +353,18 @@ class BenchmarkApp(ctk.CTk):
 
     def run_modules(self):
         """Run all modules (background thread)"""
-        self.module_results = self.module_manager.run_modules(
-            progress_callback=self.update_progress
-        )
-
-        # Restore stdout before showing results
-        if hasattr(self, '_stdout_redirector'):
-            self._stdout_redirector.uninstall()
-
-        # Show results screen
-        self.after(500, self.show_results_screen)
+        try:
+            self.module_results = self.module_manager.run_modules(
+                progress_callback=self.update_progress
+            )
+            self.after(500, self.show_results_screen)
+        except Exception as e:
+            self.module_results = []
+            self.after(0, lambda: self._error_popup("Benchmark Failed", str(e)))
+            self.after(0, self.show_start_screen)
+        finally:
+            if hasattr(self, '_stdout_redirector'):
+                self._stdout_redirector.uninstall()
         
     def show_results_screen(self):
         """Display results screen"""
@@ -349,7 +374,7 @@ class BenchmarkApp(ctk.CTk):
         # Title
         title = ctk.CTkLabel(
             self.main_container,
-            text="✓ Benchmark Complete!",
+            text="Benchmark Complete",
             font=ctk.CTkFont(size=28, weight="bold"),
             text_color="green"
         )
@@ -387,7 +412,7 @@ class BenchmarkApp(ctk.CTk):
         # Export button
         export_btn = ctk.CTkButton(
             button_frame,
-            text="📄 Export to TXT",
+            text="Export to TXT",
             font=ctk.CTkFont(size=16, weight="bold"),
             height=45,
             width=200,
@@ -397,7 +422,7 @@ class BenchmarkApp(ctk.CTk):
         
         self._upload_btn = ctk.CTkButton(
             button_frame,
-            text="📤 Upload to Server",
+            text="Upload to Server",
             font=ctk.CTkFont(size=16, weight="bold"),
             height=45,
             width=200,
@@ -422,7 +447,7 @@ class BenchmarkApp(ctk.CTk):
         # Run again button
         again_btn = ctk.CTkButton(
             button_frame,
-            text="🔄 Run Again",
+            text="Run Again",
             font=ctk.CTkFont(size=16, weight="bold"),
             height=45,
             width=200,
@@ -444,7 +469,7 @@ class BenchmarkApp(ctk.CTk):
             
             msg = ctk.CTkLabel(
                 success_window,
-                text=f"✓ Results exported successfully!\n\n{filepath}",
+                text=f"Results exported successfully.\n\n{filepath}",
                 font=ctk.CTkFont(size=14)
             )
             msg.pack(pady=30)
@@ -469,7 +494,7 @@ class BenchmarkApp(ctk.CTk):
         av_name = getattr(self, 'av_name', 'Unknown AV')
 
         # Disable button during upload to prevent double-submits
-        self._upload_btn.configure(state="disabled", text="⏳ Uploading...")
+        self._upload_btn.configure(state="disabled", text="Uploading...")
 
         def _do_upload():
             success, message = self.results_handler.upload_to_server(
@@ -483,7 +508,7 @@ class BenchmarkApp(ctk.CTk):
         """Called on main thread when upload finishes."""
         self._upload_btn.configure(
             state="normal",
-            text="📤 Upload to Server"
+            text="Upload to Server"
         )
         self._upload_popup(success, message)
 
@@ -520,6 +545,38 @@ class BenchmarkApp(ctk.CTk):
             width=100,
             command=popup.destroy
         ).pack(pady=14)
+
+    def _on_appearance_change(self, value: str):
+        """Handle theme selection from the start screen."""
+        ctk.set_appearance_mode(value.lower())
+
+    def _error_popup(self, title: str, message: str):
+        """Show an error popup with consistent styling."""
+        popup = ctk.CTkToplevel(self)
+        popup.title(title)
+        popup.geometry("520x200")
+        popup.resizable(False, False)
+        popup.lift()
+        popup.focus_force()
+
+        ctk.CTkLabel(
+            popup,
+            text=title,
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color="#e74c3c",
+        ).pack(pady=(18, 8))
+        ctk.CTkLabel(
+            popup,
+            text=message,
+            font=ctk.CTkFont(size=13),
+            wraplength=480,
+        ).pack(padx=20, pady=6)
+        ctk.CTkButton(
+            popup,
+            text="Back",
+            width=110,
+            command=popup.destroy
+        ).pack(pady=16)
 
 
 def main():

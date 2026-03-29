@@ -23,6 +23,7 @@ class SystemMonitor:
         self.interval = interval
         self.monitoring = False
         self.monitor_thread = None
+        self._lock = threading.Lock()
 
         # Metrics storage
         self.cpu_samples: List[float] = []
@@ -43,8 +44,9 @@ class SystemMonitor:
     def start(self):
         """Start monitoring system resources"""
         self.monitoring = True
-        self.cpu_samples = []
-        self.ram_delta_samples = []
+        with self._lock:
+            self.cpu_samples = []
+            self.ram_delta_samples = []
         self.test_start_time = time.time()
 
         # Capture RAM baseline BEFORE the test begins
@@ -79,13 +81,15 @@ class SystemMonitor:
         while self.monitoring:
             # CPU usage (non-blocking, uses last interval)
             cpu = psutil.cpu_percent(interval=None)
-            self.cpu_samples.append(cpu)
+            with self._lock:
+                self.cpu_samples.append(cpu)
 
             # RAM delta: how much MORE RAM is being used compared to baseline
             current_ram = self._get_used_ram_mb()
             delta = current_ram - self.ram_baseline_mb
             # Clamp to 0 so we never report negative delta
-            self.ram_delta_samples.append(max(0.0, delta))
+            with self._lock:
+                self.ram_delta_samples.append(max(0.0, delta))
 
             time.sleep(self.interval)
 
@@ -97,12 +101,16 @@ class SystemMonitor:
             Dictionary containing all metrics
         """
         # CPU metrics
-        cpu_avg = sum(self.cpu_samples) / len(self.cpu_samples) if self.cpu_samples else 0
-        cpu_peak = max(self.cpu_samples) if self.cpu_samples else 0
+        with self._lock:
+            cpu_samples = list(self.cpu_samples)
+            ram_samples = list(self.ram_delta_samples)
+
+        cpu_avg = sum(cpu_samples) / len(cpu_samples) if cpu_samples else 0
+        cpu_peak = max(cpu_samples) if cpu_samples else 0
 
         # RAM delta metrics in MB (activity above baseline)
-        ram_avg = sum(self.ram_delta_samples) / len(self.ram_delta_samples) if self.ram_delta_samples else 0
-        ram_peak = max(self.ram_delta_samples) if self.ram_delta_samples else 0
+        ram_avg = sum(ram_samples) / len(ram_samples) if ram_samples else 0
+        ram_peak = max(ram_samples) if ram_samples else 0
 
         # Disk I/O metrics in MB
         disk_read_mb = (self.disk_io_end[0] - self.disk_io_start[0]) / (1024 * 1024)
@@ -120,8 +128,9 @@ class SystemMonitor:
 
     def reset(self):
         """Reset all metrics"""
-        self.cpu_samples = []
-        self.ram_delta_samples = []
+        with self._lock:
+            self.cpu_samples = []
+            self.ram_delta_samples = []
         self.ram_baseline_mb = 0.0
         self.disk_io_start = (0, 0)
         self.disk_io_end = (0, 0)

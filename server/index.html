@@ -14,28 +14,40 @@
     href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap"
     rel="stylesheet" />
 
-  <!-- DataTables -->
-  <link rel="stylesheet" href="https://cdn.datatables.net/1.13.7/css/jquery.dataTables.min.css" />
-  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
-  <script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>
-
   <style>
     /* ─── Design Tokens ────────────────────────────────────── */
     :root {
-      --bg: #0a0e1a;
-      --bg2: #0f1629;
-      --surface: #141c30;
-      --surface2: #1b2540;
-      --border: #1e2d4a;
-      --cyan: #00e5ff;
-      --cyan-dim: #00b8cc;
-      --green: #00e676;
-      --amber: #ffab40;
-      --red: #ff5252;
-      --text: #e2e8f0;
-      --text-muted: #7a8fa6;
+      --bg: #f6f7f9;
+      --bg2: #eceff3;
+      --surface: #ffffff;
+      --surface2: #f2f4f8;
+      --border: #d8dde6;
+      --accent: #222833;
+      --cyan: #222833;
+      --cyan-dim: #495162;
+      --green: #138a4a;
+      --amber: #b66a0a;
+      --red: #b42318;
+      --text: #141a24;
+      --text-muted: #5f6979;
       --font: 'Inter', sans-serif;
       --mono: 'JetBrains Mono', monospace;
+    }
+
+    :root[data-theme='dark'] {
+      --bg: #0f1218;
+      --bg2: #161b24;
+      --surface: #161c26;
+      --surface2: #1f2733;
+      --border: #2e3747;
+      --accent: #e5ebf4;
+      --cyan: #e5ebf4;
+      --cyan-dim: #9ca7b9;
+      --green: #30ba75;
+      --amber: #d98b24;
+      --red: #e75d54;
+      --text: #e5ebf4;
+      --text-muted: #9ca7b9;
     }
 
     /* ─── Reset & Base ─────────────────────────────────────── */
@@ -53,19 +65,6 @@
       font-family: var(--font);
       min-height: 100vh;
       overflow-x: hidden;
-    }
-
-    /* ─── Animated background grid ─────────────────────────── */
-    body::before {
-      content: '';
-      position: fixed;
-      inset: 0;
-      background-image:
-        linear-gradient(rgba(0, 229, 255, .03) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(0, 229, 255, .03) 1px, transparent 1px);
-      background-size: 40px 40px;
-      pointer-events: none;
-      z-index: 0;
     }
 
     .page-wrap {
@@ -96,13 +95,15 @@
     .logo-icon {
       width: 44px;
       height: 44px;
-      background: linear-gradient(135deg, var(--cyan), #7b61ff);
+      background: var(--text);
+      color: var(--surface);
       border-radius: 12px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 22px;
-      box-shadow: 0 0 20px rgba(0, 229, 255, .3);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: .6px;
     }
 
     .logo-text h1 {
@@ -177,19 +178,22 @@
     }
 
     .btn-outline:hover {
-      border-color: var(--cyan);
-      color: var(--cyan);
+      border-color: var(--text-muted);
+      color: var(--text);
     }
 
     .btn-primary {
-      background: linear-gradient(135deg, var(--cyan-dim), #7b61ff);
-      color: #fff;
-      box-shadow: 0 0 16px rgba(0, 229, 255, .2);
+      background: var(--text);
+      color: var(--surface);
     }
 
     .btn-primary:hover {
-      box-shadow: 0 0 24px rgba(0, 229, 255, .35);
       transform: translateY(-1px);
+      opacity: .92;
+    }
+
+    .btn-theme {
+      min-width: 96px;
     }
 
     /* ─── Alert Banner ──────────────────────────────────────── */
@@ -243,15 +247,15 @@
       left: 0;
       right: 0;
       height: 2px;
-      background: linear-gradient(90deg, var(--cyan), #7b61ff);
+      background: var(--accent);
       opacity: 0;
       transition: opacity .25s;
     }
 
     .av-card:hover {
-      border-color: var(--cyan-dim);
+      border-color: var(--text-muted);
       transform: translateY(-3px);
-      box-shadow: 0 12px 40px rgba(0, 229, 255, .08);
+      box-shadow: 0 12px 30px rgba(0, 0, 0, .08);
     }
 
     .av-card:hover::before {
@@ -376,15 +380,16 @@
     }
 
     #filter-select:focus {
-      border-color: var(--cyan);
+      border-color: var(--text-muted);
     }
 
     .panel-body {
-      padding: 20px 22px;
-      overflow-x: auto;
+      padding: 0;
+      max-height: 560px;
+      overflow: auto;
     }
 
-    /* ─── DataTable Overrides ───────────────────────────────── */
+    /* ─── Results Table ─────────────────────────────────────── */
     table#results-table {
       width: 100% !important;
       border-collapse: collapse;
@@ -422,68 +427,19 @@
       background: transparent !important;
     }
 
-    .dataTables_wrapper .dataTables_filter input {
+    .table-search {
       background: var(--surface2) !important;
       border: 1px solid var(--border) !important;
       color: var(--text) !important;
       border-radius: 8px;
-      padding: 6px 10px;
+      padding: 7px 12px;
       font-family: var(--font);
       font-size: .8rem;
       outline: none;
     }
 
-    .dataTables_wrapper .dataTables_filter input:focus {
-      border-color: var(--cyan) !important;
-    }
-
-    .dataTables_wrapper .dataTables_filter label {
-      color: var(--text-muted);
-      font-size: .8rem;
-    }
-
-    .dataTables_wrapper .dataTables_length select {
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      color: var(--text);
-      border-radius: 6px;
-      padding: 4px 6px;
-      font-family: var(--font);
-    }
-
-    .dataTables_wrapper .dataTables_length label {
-      color: var(--text-muted);
-      font-size: .8rem;
-    }
-
-    .dataTables_wrapper .dataTables_info {
-      color: var(--text-muted);
-      font-size: .75rem;
-    }
-
-    .dataTables_wrapper .dataTables_paginate .paginate_button {
-      color: var(--text-muted) !important;
-      border-radius: 6px !important;
-      font-size: .78rem;
-      padding: 4px 8px !important;
-    }
-
-    .dataTables_wrapper .dataTables_paginate .paginate_button.current {
-      background: var(--surface2) !important;
-      border: 1px solid var(--border) !important;
-      color: var(--cyan) !important;
-    }
-
-    .dataTables_wrapper .dataTables_paginate .paginate_button:hover {
-      background: var(--surface2) !important;
-      color: var(--text) !important;
-      border-color: var(--border) !important;
-    }
-
-    table.dataTable thead .sorting::after,
-    table.dataTable thead .sorting_asc::after,
-    table.dataTable thead .sorting_desc::after {
-      color: var(--cyan) !important;
+    .table-search:focus {
+      border-color: var(--text-muted) !important;
     }
 
     /* ─── Score Badges ──────────────────────────────────────── */
@@ -835,6 +791,22 @@
       color: var(--cyan);
     }
 
+    .table-meta {
+      font-size: .74rem;
+      color: var(--text-muted);
+      padding: 10px 22px;
+      border-top: 1px solid var(--border);
+      background: var(--surface2);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+
     /* ─── Scoring Info Panel ────────────────────────────────── */
     .info-panel {
       margin-top: 24px;
@@ -909,14 +881,16 @@
 
     .score-table td {
       padding: 9px 12px;
-      border-bottom: 1px solid rgba(30,45,74,.5);
+      border-bottom: 1px solid rgba(30, 45, 74, .5);
       vertical-align: top;
     }
 
-    .score-table tr:last-child td { border-bottom: none; }
+    .score-table tr:last-child td {
+      border-bottom: none;
+    }
 
     .score-table tr:hover td {
-      background: rgba(0,229,255,.03);
+      background: rgba(0, 229, 255, .03);
     }
 
     .pts-badge {
@@ -926,18 +900,18 @@
       font-weight: 700;
       padding: 2px 7px;
       border-radius: 5px;
-      background: rgba(0,229,255,.1);
+      background: rgba(0, 229, 255, .1);
       color: var(--cyan);
       white-space: nowrap;
     }
 
     .pts-badge.amber {
-      background: rgba(255,171,64,.1);
+      background: rgba(255, 171, 64, .1);
       color: var(--amber);
     }
 
     .pts-badge.total {
-      background: rgba(0,230,118,.1);
+      background: rgba(0, 230, 118, .1);
       color: var(--green);
     }
 
@@ -963,16 +937,15 @@
       text-align: center;
       padding: 80px 0 60px;
     }
+
     .hero h2 {
       font-size: 2.8rem;
       font-weight: 700;
       letter-spacing: -1px;
       margin-bottom: 12px;
-      background: linear-gradient(135deg, var(--cyan), #7b61ff);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
+      color: var(--text);
     }
+
     .hero .hero-sub {
       font-size: 1.1rem;
       color: var(--text-muted);
@@ -980,33 +953,38 @@
       margin: 0 auto 32px;
       line-height: 1.6;
     }
+
     .hero .hero-version {
       font-size: .8rem;
       color: var(--text-muted);
       margin-bottom: 28px;
     }
+
     .download-btn {
       display: inline-block;
-      background: linear-gradient(135deg, var(--cyan), #7b61ff);
-      color: #0a0e1a;
+      background: var(--text);
+      color: var(--surface);
       font-weight: 700;
       font-size: 1rem;
       padding: 14px 40px;
       border-radius: 10px;
       text-decoration: none;
       transition: transform .15s, box-shadow .15s;
-      box-shadow: 0 4px 20px rgba(0,229,255,.25);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, .16);
     }
+
     .download-btn:hover {
       transform: translateY(-2px);
-      box-shadow: 0 6px 30px rgba(0,229,255,.4);
+      box-shadow: 0 7px 22px rgba(0, 0, 0, .2);
     }
+
     .how-it-works {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
       gap: 20px;
       margin: 48px 0 0;
     }
+
     .hiw-card {
       background: var(--surface);
       border: 1px solid var(--border);
@@ -1014,13 +992,26 @@
       padding: 24px 20px;
       text-align: center;
     }
-    .hiw-card .hiw-icon { font-size: 2rem; margin-bottom: 10px; }
-    .hiw-card h3 { font-size: .95rem; margin-bottom: 6px; }
-    .hiw-card p { font-size: .78rem; color: var(--text-muted); line-height: 1.5; }
+
+    .hiw-card .hiw-icon {
+      font-size: 2rem;
+      margin-bottom: 10px;
+    }
+
+    .hiw-card h3 {
+      font-size: .95rem;
+      margin-bottom: 6px;
+    }
+
+    .hiw-card p {
+      font-size: .78rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
 
     .warning-callout {
-      background: rgba(255,171,64,.08);
-      border: 1px solid rgba(255,171,64,.25);
+      background: rgba(255, 171, 64, .08);
+      border: 1px solid rgba(255, 171, 64, .25);
       border-radius: 10px;
       padding: 14px 20px;
       margin: 28px auto 0;
@@ -1029,11 +1020,14 @@
       color: var(--amber);
       text-align: center;
     }
-    .warning-callout a { color: var(--cyan); }
+
+    .warning-callout a {
+      color: var(--cyan);
+    }
 
     .disclaimer-callout {
-      background: rgba(255,82,82,.06);
-      border: 1px solid rgba(255,82,82,.2);
+      background: rgba(255, 82, 82, .06);
+      border: 1px solid rgba(255, 82, 82, .2);
       border-radius: 10px;
       padding: 14px 20px;
       margin: 14px auto 0;
@@ -1050,10 +1044,10 @@
       font-weight: 700;
       color: var(--text);
     }
+
     .section-divider span {
       color: var(--cyan);
     }
-
   </style>
 </head>
 
@@ -1063,7 +1057,7 @@
     <!-- HEADER -->
     <header>
       <div class="logo">
-        <div class="logo-icon">🛡️</div>
+        <div class="logo-icon">AU</div>
         <div class="logo-text">
           <h1>AV-Unitest</h1>
           <p>Modular Antivirus Benchmark Platform</p>
@@ -1074,8 +1068,9 @@
           <div class="status-dot"></div>
           <span id="status-text">Connecting…</span>
         </div>
-        <button class="btn btn-outline" id="refresh-btn" title="Refresh data">↻ Refresh</button>
-        <button class="btn btn-primary" id="export-btn">⬇ Export CSV</button>
+        <button class="btn btn-outline btn-theme" id="theme-btn" type="button">Dark mode</button>
+        <button class="btn btn-outline" id="refresh-btn" title="Refresh data">Refresh</button>
+        <button class="btn btn-primary" id="export-btn">Export CSV</button>
       </div>
     </header>
 
@@ -1087,41 +1082,47 @@
         EICAR signatures, phishing simulation, MITRE ATT&amp;CK techniques, and behavioral anomaly detection.
       </p>
       <p class="hero-version">v1.2.0 · GPL-3.0 · Windows 10/11</p>
-      <a href="https://github.com/Shazali123/av-unitest/releases/latest" target="_blank" class="download-btn" id="download-btn">
-        ⬇ Download AV-Unitest.exe
+      <a href="https://github.com/Shazali123/av-unitest/releases/latest" target="_blank" class="download-btn"
+        id="download-btn">
+        Download AV-Unitest.exe
       </a>
 
       <div class="how-it-works">
         <div class="hiw-card">
-          <div class="hiw-icon">📥</div>
+          <div class="hiw-icon">1</div>
           <h3>1. Download</h3>
           <p>Grab AV-Unitest.exe — no install needed. Runs standalone.</p>
         </div>
         <div class="hiw-card">
-          <div class="hiw-icon">▶️</div>
+          <div class="hiw-icon">2</div>
           <h3>2. Run</h3>
           <p>Click Start Benchmark. 4 modules test your AV automatically.</p>
         </div>
         <div class="hiw-card">
-          <div class="hiw-icon">📊</div>
+          <div class="hiw-icon">3</div>
           <h3>3. Score</h3>
           <p>Get a 10-point score: 6 pts detection + 4 pts performance.</p>
         </div>
         <div class="hiw-card">
-          <div class="hiw-icon">🌐</div>
+          <div class="hiw-icon">4</div>
           <h3>4. Compare</h3>
           <p>Results upload here. See how your AV compares globally.</p>
         </div>
       </div>
 
       <div class="warning-callout">
-        🛡️ <strong>Your antivirus may flag this tool</strong> —
+        <strong>Your antivirus may flag this tool</strong> —
         AV-Unitest simulates attack techniques to test your AV.
         This is intentional and safe.
-        <a href="#how-to-whitelist" style="display:block;margin-top:4px">For the most accurate results, it is highly recommended to exempt the executable prior to running, as the benchmark utilizes simulated attack payloads.</a>
+        <a href="https://www.virustotal.com/gui/file/f146971dab2e39f252c2273ea486e8429e6f138df9f38b4970b6744857fb7da3/detection"
+          target="_blank" style="display:block;margin:8px 0;font-weight:600;color:var(--cyan)">View VirusTotal
+          Transparency Report (17/71)</a>
+        <a href="#how-to-whitelist" style="display:block;margin-top:4px">For the most accurate results, it is highly
+          recommended to exempt the executable prior to running, as the benchmark utilizes simulated attack
+          payloads.</a>
       </div>
       <div class="disclaimer-callout">
-        ⚠️ <strong>Disclaimer:</strong> We strongly recommend running AV-Unitest on
+        <strong>Disclaimer:</strong> I strongly recommend running AV-Unitest on
         virtual machines or dedicated test devices — not your personal machine.
       </div>
     </section>
@@ -1130,12 +1131,12 @@
 
     <!-- Alert if API unreachable -->
     <div id="alert-banner">
-      ⚠️ <span id="alert-msg">Could not reach API. Is Flask running?</span>
+      <span id="alert-msg">Could not reach API. Is Flask running?</span>
     </div>
 
     <div class="info-panel open" id="scoring-info-panel">
       <div class="info-panel-header" onclick="document.getElementById('scoring-info-panel').classList.toggle('open')">
-        <span class="info-panel-title">ℹ️ How Scoring Works — Click to Collapse</span>
+        <span class="info-panel-title">How Scoring Works — Click to Collapse</span>
         <span class="info-panel-toggle">▾</span>
       </div>
       <div class="info-panel-body">
@@ -1158,31 +1159,39 @@
           </thead>
           <tbody>
             <tr>
-              <td rowspan="4"><strong>Detection Effectiveness</strong><br><span style="color:var(--text-muted);font-size:.75rem">60% — Automated</span></td>
+              <td rowspan="4"><strong>Detection Effectiveness</strong><br><span
+                  style="color:var(--text-muted);font-size:.75rem">60% — Automated</span></td>
               <td>Layer 1 — EICAR Signature</td>
               <td><span class="pts-badge">1.0 pt</span></td>
-              <td style="color:var(--text-muted);font-size:.78rem">Binary — 0 or 1.0 pt<br>Known test file dropped to disk — simplest detection test</td>
+              <td style="color:var(--text-muted);font-size:.78rem">Binary — 0 or 1.0 pt<br>Known test file dropped to
+                disk — simplest detection test</td>
             </tr>
             <tr>
               <td>Layer 2 — GoPhish Simulation</td>
               <td><span class="pts-badge">1.0 pt</span></td>
-              <td style="color:var(--text-muted);font-size:.78rem">Binary — 0 or 1.0 pt<br>Phishing campaign with URL blocking + credential capture detection</td>
+              <td style="color:var(--text-muted);font-size:.78rem">Binary — 0 or 1.0 pt<br>Phishing campaign with URL
+                blocking + credential capture detection</td>
             </tr>
             <tr>
               <td>Layer 3 — MITRE Atomic Red Team</td>
               <td><span class="pts-badge">2.0 pts</span></td>
-              <td style="color:var(--text-muted);font-size:.78rem">Split across sub-tests (proportional scoring)<br>Real ATT&amp;CK techniques: PowerShell, LSASS dump, LOLBin, etc.</td>
+              <td style="color:var(--text-muted);font-size:.78rem">Split across sub-tests (proportional scoring)<br>Real
+                ATT&amp;CK techniques: PowerShell, LSASS dump, LOLBin, etc.</td>
             </tr>
             <tr>
               <td>Layer 4 — ABAE Behavioral Engine</td>
               <td><span class="pts-badge">2.0 pts</span></td>
-              <td style="color:var(--text-muted);font-size:.78rem">Split across behavioral sub-tests (proportional scoring)<br>Signature-independent detection — the <strong style="color:var(--text)">modern standard</strong> for endpoint protection</td>
+              <td style="color:var(--text-muted);font-size:.78rem">Split across behavioral sub-tests (proportional
+                scoring)<br>Signature-independent detection — the <strong style="color:var(--text)">modern
+                  standard</strong> for endpoint protection</td>
             </tr>
             <tr>
-              <td rowspan="3"><strong>Performance Impact</strong><br><span style="color:var(--amber);font-size:.75rem">40% — Automated</span></td>
+              <td rowspan="3"><strong>Performance Impact</strong><br><span
+                  style="color:var(--amber);font-size:.75rem">40% — Automated</span></td>
               <td>CPU Peak / Average</td>
               <td><span class="pts-badge amber">1.5 pts</span></td>
-              <td style="color:var(--text-muted);font-size:.78rem">Starts at 1.5, deducted by CPU overhead during tests</td>
+              <td style="color:var(--text-muted);font-size:.78rem">Starts at 1.5, deducted by CPU overhead during tests
+              </td>
             </tr>
             <tr>
               <td>RAM Consumption</td>
@@ -1192,7 +1201,8 @@
             <tr>
               <td>Disk I/O / Latency</td>
               <td><span class="pts-badge amber">1.0 pt</span></td>
-              <td style="color:var(--text-muted);font-size:.78rem">Starts at 1.0, deducted by disk write overhead (MB)</td>
+              <td style="color:var(--text-muted);font-size:.78rem">Starts at 1.0, deducted by disk write overhead (MB)
+              </td>
             </tr>
             <tr style="background:rgba(0,230,118,.04)">
               <td><strong>Total Score</strong></td>
@@ -1204,10 +1214,14 @@
         </table>
 
         <div class="formula-box">
-          <div><span class="formula-key">Detection Score</span> = EICAR(0/1.0) + GoPhish(0/1.0) + Atomic_sub_tests × (2.0/N) + ABAE_sub_tests × (2.0/N)</div>
-          <div style="color:rgba(122,143,166,.7);font-size:.72rem;padding-left:1em">e.g. EICAR✓ + GoPhish✓ + 3/5 Atomic + 4/6 ABAE = 1.0 + 1.0 + 1.2 + 1.33 = 4.53 / 6.0</div>
-          <div><span class="formula-key">Performance Score</span> = CPU_sub(1.5 max) + RAM_sub(1.5 max) + Disk_sub(1.0 max)</div>
-          <div><span class="formula-key">Total Score</span> = Detection Score + Performance Score  <span style="color:var(--text-muted)">[max 10.0]</span></div>
+          <div><span class="formula-key">Detection Score</span> = EICAR(0/1.0) + GoPhish(0/1.0) + Atomic_sub_tests ×
+            (2.0/N) + ABAE_sub_tests × (2.0/N)</div>
+          <div style="color:rgba(122,143,166,.7);font-size:.72rem;padding-left:1em">e.g. EICAR✓ + GoPhish✓ + 3/5 Atomic
+            + 4/6 ABAE = 1.0 + 1.0 + 1.2 + 1.33 = 4.53 / 6.0</div>
+          <div><span class="formula-key">Performance Score</span> = CPU_sub(1.5 max) + RAM_sub(1.5 max) + Disk_sub(1.0
+            max)</div>
+          <div><span class="formula-key">Total Score</span> = Detection Score + Performance Score <span
+              style="color:var(--text-muted)">[max 10.0]</span></div>
         </div>
 
         <p style="font-size:.74rem;color:var(--text-muted);margin-top:12px">
@@ -1236,8 +1250,9 @@
     <section id="table-section">
       <div class="panel">
         <div class="panel-header">
-          <span class="panel-title">📋 All Benchmark Runs</span>
+          <span class="panel-title">All Benchmark Runs</span>
           <div class="table-controls">
+            <input id="search-input" class="table-search" type="search" placeholder="Search AV, run ID, date..." />
             <select id="filter-select">
               <option value="">All Antivirus Products</option>
             </select>
@@ -1268,6 +1283,7 @@
             </tbody>
           </table>
         </div>
+        <div class="table-meta" id="table-meta">0 runs shown</div>
       </div>
     </section>
 
@@ -1283,7 +1299,7 @@
           <div id="modal-title">Run Details</div>
           <div id="modal-meta"></div>
         </div>
-        <button id="modal-close">✕</button>
+        <button id="modal-close" aria-label="Close details">×</button>
       </div>
       <div id="modal-body"><!-- populated by JS --></div>
     </div>
@@ -1305,9 +1321,14 @@
     /* ── Config ──────────────────────────────────────────────── */
     const API_BASE = '/api';   // Nginx proxies this to Flask :5000
     const REFRESH_MS = 60000;   // Auto-refresh every 60 s
-    let dataTable = null;
     let allResults = [];
     let autoTimer = null;
+    let currentResults = [];
+    let filteredResults = [];
+    let viewportEl = null;
+    let tableEventsBound = false;
+    const VIRTUAL_ROW_HEIGHT = 56;
+    const VIRTUAL_BUFFER = 12;
 
     /* ── Helpers ─────────────────────────────────────────────── */
     function scoreClass(v) {
@@ -1322,8 +1343,8 @@
     }
 
     function detectBadge(v) {
-      return v ? '<span class="badge-detect badge-yes">✓ YES</span>'
-        : '<span class="badge-detect badge-no">✗ NO</span>';
+      return v ? '<span class="badge-detect badge-yes">YES</span>'
+        : '<span class="badge-detect badge-no">NO</span>';
     }
 
     function fmtDate(ts) {
@@ -1331,7 +1352,7 @@
       try {
         // New ISO-8601 offset format (e.g. "2026-03-25T22:00:00+08:00")
         if (ts.includes('T')) return new Date(ts).toLocaleString();
-        
+
         // Old format fallback: "YYYY-MM-DD HH:MM:SS"
         // Replace space with T to create valid local ISO string
         return new Date(ts.replace(' ', 'T')).toLocaleString();
@@ -1353,6 +1374,23 @@
       b.style.display = 'flex';
     }
     function hideAlert() { document.getElementById('alert-banner').style.display = 'none'; }
+
+    function applyTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme);
+      localStorage.setItem('av-unitest-theme', theme);
+      document.getElementById('theme-btn').textContent = theme === 'dark' ? 'Light mode' : 'Dark mode';
+    }
+
+    function initTheme() {
+      const stored = localStorage.getItem('av-unitest-theme');
+      const systemDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      const initial = stored || (systemDark ? 'dark' : 'light');
+      applyTheme(initial);
+      document.getElementById('theme-btn').addEventListener('click', () => {
+        const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+        applyTheme(next);
+      });
+    }
 
     /* ── Fetch helpers ───────────────────────────────────────── */
     async function apiFetch(path) {
@@ -1376,7 +1414,7 @@
           : cls === 'badge-amber' ? 'var(--amber)'
             : 'var(--red)';
         const barPct = Math.min(100, ((av.avg_score ?? 0) / 10) * 100).toFixed(1);
-        const rankLabel = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`;
+        const rankLabel = idx === 0 ? '#1' : idx === 1 ? '#2' : idx === 2 ? '#3' : `#${idx + 1}`;
         const abaeVerdict = av.abae_verdict ?? null;
         const abaeBadge = abaeVerdict
           ? `<span style="font-size:.72rem;font-weight:700;padding:2px 8px;border-radius:5px;${abaeVerdict === 'PASS' ? 'background:rgba(0,230,118,.12);color:var(--green)' : 'background:rgba(255,82,82,.12);color:var(--red)'}">ABAE: ${abaeVerdict}</span>`
@@ -1417,13 +1455,12 @@
       }).join('');
     }
 
-    /* ── Table ───────────────────────────────────────────────── */
-    function renderTable(results) {
-      const tbody = document.getElementById('table-body');
-      tbody.innerHTML = results.map((r, i) => `
+    /* ── Table (virtualized) ─────────────────────────────────── */
+    function rowHtml(r, idx) {
+      return `
       <tr data-runid="${r.run_id}">
-        <td>${i + 1}</td>
-        <td><span class="av-chip">🛡 ${r.av_name}</span></td>
+        <td>${idx + 1}</td>
+        <td><span class="av-chip">${r.av_name}</span></td>
         <td>${scoreBadge(r.total_score)}</td>
         <td>${scoreBadge(r.detection_score)}</td>
         <td>${scoreBadge(r.performance_score)}</td>
@@ -1436,22 +1473,67 @@
         <td style="font-family:var(--mono)">${r.disk_write_mb != null ? r.disk_write_mb.toFixed(2) : '—'}</td>
         <td style="font-size:.75rem;color:var(--text-muted)">${fmtDate(r.timestamp)}</td>
         <td style="font-family:var(--mono);font-size:.7rem;color:var(--text-muted)">${r.run_id}</td>
-      </tr>`).join('');
+      </tr>`;
+    }
 
-      if (dataTable) { dataTable.destroy(); dataTable = null; }
+    function renderVisibleRows() {
+      const tbody = document.getElementById('table-body');
+      const total = filteredResults.length;
+      if (!viewportEl) viewportEl = document.querySelector('.panel-body');
 
-      dataTable = $('#results-table').DataTable({
-        order: [[2, 'desc']],
-        pageLength: 25,
-        language: { search: '🔍', emptyTable: 'No benchmark runs found.', zeroRecords: 'No matching runs.' },
-        columnDefs: [{ orderable: false, targets: [5, 6, 7, 8] }],
+      if (!total) {
+        tbody.innerHTML = '<tr><td colspan="14" style="padding:20px;color:var(--text-muted)">No benchmark runs found.</td></tr>';
+        document.getElementById('table-meta').textContent = '0 runs shown';
+        return;
+      }
+
+      const scrollTop = viewportEl.scrollTop;
+      const viewportHeight = viewportEl.clientHeight || 560;
+      const start = Math.max(0, Math.floor(scrollTop / VIRTUAL_ROW_HEIGHT) - VIRTUAL_BUFFER);
+      const visibleCount = Math.ceil(viewportHeight / VIRTUAL_ROW_HEIGHT) + VIRTUAL_BUFFER * 2;
+      const end = Math.min(total, start + visibleCount);
+
+      const topPad = start * VIRTUAL_ROW_HEIGHT;
+      const bottomPad = Math.max(0, (total - end) * VIRTUAL_ROW_HEIGHT);
+      const rows = filteredResults.slice(start, end).map((r, i) => rowHtml(r, start + i)).join('');
+
+      tbody.innerHTML = `
+        <tr aria-hidden="true"><td colspan="14" style="padding:0;border:none;height:${topPad}px"></td></tr>
+        ${rows}
+        <tr aria-hidden="true"><td colspan="14" style="padding:0;border:none;height:${bottomPad}px"></td></tr>
+      `;
+      document.getElementById('table-meta').textContent = `${total.toLocaleString()} runs shown`;
+    }
+
+    function applyFilters(resetScroll = true) {
+      const selected = document.getElementById('filter-select').value.trim().toLowerCase();
+      const q = document.getElementById('search-input').value.trim().toLowerCase();
+      filteredResults = currentResults.filter(r => {
+        if (selected && (r.av_name || '').toLowerCase() !== selected) return false;
+        if (!q) return true;
+        const hay = `${r.av_name ?? ''} ${r.run_id ?? ''} ${fmtDate(r.timestamp)}`.toLowerCase();
+        return hay.includes(q);
       });
+      if (resetScroll && viewportEl) viewportEl.scrollTop = 0;
+      renderVisibleRows();
+    }
 
-      // Row click → modal
-      $('#results-table tbody').off('click').on('click', 'tr', function () {
-        const run_id = $(this).data('runid');
-        openModal(run_id);
-      });
+    function renderTable(results) {
+      currentResults = [...results].sort((a, b) => (b.total_score ?? 0) - (a.total_score ?? 0));
+      if (!viewportEl) {
+        viewportEl = document.querySelector('.panel-body');
+        viewportEl.addEventListener('scroll', renderVisibleRows, { passive: true });
+      }
+
+      if (!tableEventsBound) {
+        tableEventsBound = true;
+        document.getElementById('table-body').addEventListener('click', (e) => {
+          const tr = e.target.closest('tr[data-runid]');
+          if (tr) openModal(tr.getAttribute('data-runid'));
+        });
+      }
+
+      applyFilters();
     }
 
     /* ── AV Filter ───────────────────────────────────────────── */
@@ -1460,15 +1542,12 @@
       if (!avs || !Array.isArray(avs)) return;
       avs.forEach(av => {
         const opt = document.createElement('option');
-        opt.value = av; opt.textContent = av;
+        opt.value = av;
+        opt.textContent = av;
         sel.appendChild(opt);
       });
-      sel.addEventListener('change', async () => {
-        const q = sel.value ? `?av=${encodeURIComponent(sel.value)}` : '';
-        const data = await apiFetch(`/results${q}`);
-        renderTable(data);
-        allResults = data;
-      });
+      sel.addEventListener('change', () => applyFilters());
+      document.getElementById('search-input').addEventListener('input', () => applyFilters(false));
     }
 
     /* ── Modal helpers ───────────────────────────────────────── */
@@ -1513,9 +1592,9 @@
       html += kv('Campaign ID', gp.campaign_id ?? '—');
       html += kv('Campaign Status', gp.campaign_status ?? '—');
       html += kv('Phishing URL', gp.phish_url ?? '—');
-      html += kv('URL Accessible', gp.phish_url_accessible ? '✓ Yes — page loaded' : '✗ No — blocked/unreachable');
+      html += kv('URL Accessible', gp.phish_url_accessible ? 'Yes — page loaded' : 'No — blocked/unreachable');
       if (gp.phish_page_blocked && gp.block_reason) html += kv('Block Reason', gp.block_reason);
-      html += kv('Credential Submission', gp.cred_submit_success ? '✓ Succeeded (data POSTed)' : '✗ Not submitted / blocked');
+      html += kv('Credential Submission', gp.cred_submit_success ? 'Succeeded (data POSTed)' : 'Not submitted / blocked');
       html += kv('Clicks Recorded', gp.clicks_recorded ?? '—');
       html += kv('Submits Recorded', gp.submitted_recorded ?? '—');
       if (gp.verdict_reason) html += kv('Verdict Reason', gp.verdict_reason);
@@ -1750,6 +1829,7 @@
     }
 
     // Kick off
+    initTheme();
     loadAll().then(scheduleRefresh);
   </script>
 
